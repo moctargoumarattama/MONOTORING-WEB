@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# Installation limitée au NOC. Aucun service applicatif existant n'est modifié.
+set -Eeuo pipefail
+umask 027
+
+readonly APP_DIR=/opt/noc-dashboard
+readonly APP_USER=noc-dashboard
+readonly ENV_FILE=/etc/noc-dashboard.env
+readonly UNIT_FILE=/etc/systemd/system/noc-dashboard.service
+readonly SUDOERS_FILE=/etc/sudoers.d/noc-dashboard
+readonly SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+BACKUP_DIR=""
+STAGED_SUDOERS=""
+
+fail() { printf 'Erreur : %s\n' "$*" >&2; exit 1; }
+cleanup() {
+    if [[ -n "$STAGED_SUDOERS" && -f "$STAGED_SUDOERS" ]]; then
+        rm -f -- "$STAGED_SUDOERS"
+    fi
+}
+trap cleanup EXIT
+trap 'printf "Installation interrompue à la ligne %s. Consultez le message précédent.\n" "$LINENO" >&2' ERR
+
+[[ "$(uname -s)" == Linux ]] || fail "ce script nécessite Ubuntu/Linux."
+[[ "$EUID" -eq 0 ]] || fail "lancez sudo bash install.sh."
+[[ -d /run/systemd/system ]] || fail "systemd doit être le gestionnaire de services de cette machine."
+for command in python3.11 systemctl systemd-analyze sudo visudo useradd groupadd getent install realpath cmp find; do
+    command -v "$command" >/dev/null || fail "commande requise absente : $command."
+done
+[[ -x /usr/bin/systemctl ]] || fail "/usr/bin/systemctl est requis par la règle sudoers."
+python3.11 -c 'import sys, venv; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
+    || fail "Python 3.11 avec le module venv est requis."
+
+PROJECT_FILES=(requirements.txt config.py collector.py main.py vps_agent.py install.sh noc-dashboard.service vps-agent.service README.md .gitignore)
+for relative in "${PROJECT_FILES[@]}" static/index.html; do
+    [[ -f "$SOURCE_DIR/$relative" && ! -L "$SOURCE_DIR/$relative" ]] || fail "fichier source manquant ou lien symbolique : $relative."
+done
+[[ -d "$SOURCE_DIR/static" && ! -L "$SOURCE_DIR/static" ]] || fail "répertoire static invalide."
+python3.11 - "$SOURCE_DIR" <<'PY'
+import ast
+import pathlib
+import sys
+directory = pathlib.Path(sys.argv[1])
+for name in ("config.py", "collector.py", "main.py", "vps_agent.py"):
+    ast.parse((directory / name).read_text(encoding="utf-8"), filename=name)
+PY
+
+assert_destination() {
+    local target="$1"
+    [[ ! -L "$target" && "$(realpath -m -- "$target")" == "$target" ]] \
+        || fail "destination contenant un lien symbolique, modification refusée : $target."
+}
+
+assert_destination "$APP_DIR"
+assert_destination "$ENV_FILE"
+assert_destination "$UNIT_FILE"
+assert_destination "$SUDOERS_FILE"
+[[ ! -e "$ENV_FILE" || -f "$ENV_FILE" ]] || fail "la configuration existante doit être un fichier ordinaire."
+if ! getent group "$APP_USER" >/dev/null; then
+    groupadd --system "$APP_USER"
+fi
+if ! id "$APP_USER" >/dev/null 2>&1; then
+    useradd --system --gid "$APP_USER" --home-dir "$APP_DIR" --no-create-home --shell /usr/sbin/nologin "$APP_USER"
+fi
+[[ "$(id -u "$APP_USER")" -ne 0 ]] || fail "le compte noc-dashboard ne peut pas être root."
+install -d -o root -g "$APP_USER" -m 0750 "$APP_DIR"
+
+backup_if_changed() {
+    local source="$1" destination="$2" backup_target
+    if [[ -f "$destination" ]] && ! cmp -s -- "$source" "$destination"; then
+        if [[ -z "$BACKUP_DIR" ]]; then
+            assert_destination /var/backups/noc-dashboard
+            install -d -o root -g root -m 0700 /var/backups/noc-dashboard
+            BACKUP_DIR="$(mktemp -d /var/backups/noc-dashboard/update-XXXXXXXX)"
+            chmod 0700 "$BACKUP_DIR"
+        fi
+        backup_target="$BACKUP_DIR$destination"
+        install -d -o root -g root -m 0700 "$(dirname -- "$backup_target")"
+        cp -p -- "$destination" "$backup_target"
+    fi
+}
+
+copy_project_file() {
+    local relative="$1" source="$SOURCE_DIR/$1" destination="$APP_DIR/$1" mode=0640
+    assert_destination "$destination"
+    install -d -o root -g "$APP_USER" -m 0750 "$(dirname -- "$destination")"
+    if [[ "$relative" == install.sh || "$relative" == vps_agent.py ]]; then mode=0750; fi
+    if [[ "$source" != "$destination" ]]; then
+        backup_if_changed "$source" "$destination"
+        if ! [[ -f "$destination" ]] || ! cmp -s -- "$source" "$destination"; then
+            install -o root -g "$APP_USER" -m "$mode" "$source" "$destination"
+        fi
+    fi
+    chown root:"$APP_USER" "$destination"
+    chmod "$mode" "$destination"
+}
+
+# Le fichier existant reste intact : aucune rotation implicite des secrets.
+if [[ ! -e "$ENV_FILE" ]]; then
+    install -o root -g "$APP_USER" -m 0640 /dev/null "$ENV_FILE"
+    {
+        printf '%s\n' '# Configuration NOC, lisible seulement par root et noc-dashboard.'
+        printf '%s\n' 'NOC_HOST=127.0.0.1' 'NOC_PORT=5050' 'NOC_INTERVAL_SECONDS=2' 'NOC_VPS_STALE_SECONDS=20'
+        printf '%s\n' 'NOC_BACKUP_PATH=/mnt/babamarket-backups' 'NOC_ENABLE_RESTART=true' 'NOC_COOKIE_SECURE=false'
+        printf 'NOC_GATEWAY_SECRET=%s\n' "${NOC_GATEWAY_SECRET:-secret-gateway-local-klasora-2024}"
+        printf 'NOC_VIEW_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
+        printf 'NOC_ADMIN_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
+        printf 'NOC_VPS_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
+    } > "$ENV_FILE"
+fi
+chown root:"$APP_USER" "$ENV_FILE"
+chmod 0640 "$ENV_FILE"
+
+assert_destination "$APP_DIR/venv"
+if [[ ! -x "$APP_DIR/venv/bin/python" ]]; then
+    python3.11 -m venv "$APP_DIR/venv" \
+        || fail "création du venv impossible ; vérifiez le paquet python3.11-venv."
+fi
+"$APP_DIR/venv/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
+    || fail "le venv existant doit utiliser Python 3.11 ; il a été conservé."
+"$APP_DIR/venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r "$SOURCE_DIR/requirements.txt"
+chown -hR root:"$APP_USER" "$APP_DIR/venv"
+chmod -R go-w "$APP_DIR/venv"
+"$APP_DIR/venv/bin/python" -c 'import fastapi, uvicorn, psutil, httpx, sse_starlette'
+
+# Remplace le code uniquement une fois les dépendances utilisables.
+for relative in "${PROJECT_FILES[@]}"; do copy_project_file "$relative"; done
+while IFS= read -r -d '' source; do
+    copy_project_file "${source#"$SOURCE_DIR/"}"
+done < <(find "$SOURCE_DIR/static" -type f -print0)
+
+# Aucune étoile : ces quatre commandes exactes sont les seuls redémarrages autorisés.
+STAGED_SUDOERS="$(mktemp /etc/sudoers.d/.noc-dashboard-XXXXXX)"
+printf '%s\n' \
+    'Defaults:noc-dashboard timestamp_timeout=0' \
+    'noc-dashboard ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block restart merca-market.service, /usr/bin/systemctl --no-block restart klasora.service, /usr/bin/systemctl --no-block restart babamarket.service, /usr/bin/systemctl --no-block restart moc-mal.service' \
+    > "$STAGED_SUDOERS"
+chmod 0440 "$STAGED_SUDOERS"
+visudo -cf "$STAGED_SUDOERS"
+backup_if_changed "$STAGED_SUDOERS" "$SUDOERS_FILE"
+chown root:root "$STAGED_SUDOERS"
+mv -f -- "$STAGED_SUDOERS" "$SUDOERS_FILE"
+STAGED_SUDOERS=""
+
+systemd-analyze verify "$APP_DIR/noc-dashboard.service"
+backup_if_changed "$APP_DIR/noc-dashboard.service" "$UNIT_FILE"
+install -o root -g root -m 0644 "$APP_DIR/noc-dashboard.service" "$UNIT_FILE"
+systemctl daemon-reload
+if systemctl is-active --quiet noc-dashboard.service; then
+    systemctl enable noc-dashboard.service
+    systemctl restart noc-dashboard.service
+else
+    systemctl enable --now noc-dashboard.service
+fi
+
+# Vérifie une vraie réponse HTTP du processus démarré, avec la configuration retenue.
+"$APP_DIR/venv/bin/python" - "$ENV_FILE" <<'PY'
+import json
+import shlex
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+config = {}
+with open(sys.argv[1], encoding="utf-8") as handle:
+    for line in handle:
+        line = line.strip()
+        if line.startswith(("NOC_HOST=", "NOC_PORT=")):
+            key, value = line.split("=", 1)
+            parsed = shlex.split(value)
+            config[key] = parsed[0] if parsed else ""
+host = config.get("NOC_HOST", "127.0.0.1")
+host = "127.0.0.1" if host in {"0.0.0.0", ""} else "::1" if host == "::" else host
+host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+url = f"http://{host}:{int(config.get('NOC_PORT', '5050'))}/api/health"
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+for _ in range(20):
+    active = subprocess.run(["systemctl", "is-active", "--quiet", "noc-dashboard.service"], check=False).returncode == 0
+    if active:
+        try:
+            with opener.open(url, timeout=1) as response:
+                health = json.loads(response.read(8192))
+                pid = subprocess.run(
+                    ["systemctl", "show", "--property=MainPID", "--value", "noc-dashboard.service"],
+                    capture_output=True, text=True, timeout=1, check=False,
+                )
+                if response.status == 200 and isinstance(health, dict) and health.get("process_id") == int(pid.stdout.strip()):
+                    print(f"Dashboard actif ; /api/health répond sur {url}.")
+                    break
+        except (OSError, urllib.error.URLError, ValueError, subprocess.TimeoutExpired):
+            pass
+    time.sleep(1)
+else:
+    print("Le NOC ne répond pas : consultez sudo journalctl -u noc-dashboard -n 50 --no-pager.", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+printf '%s\n' 'Installation terminée. Le service noc-dashboard est actif.' \
+    'Configuration et jetons : /etc/noc-dashboard.env (aucun jeton affiché).'
+if [[ -n "$BACKUP_DIR" ]]; then printf 'Sauvegarde des fichiers remplacés : %s\n' "$BACKUP_DIR"; fi
