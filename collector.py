@@ -189,6 +189,12 @@ class Collector:
     @staticmethod
     def disk_metrics(path: str, require_mount: bool = False) -> DiskMetrics:
         mounted = os.path.ismount(path)
+        if mounted and require_mount:
+            try:
+                # Un bind systemd peut être un mountpoint tout en restant sur /.
+                mounted = os.stat(path).st_dev != os.stat(os.path.abspath(os.sep)).st_dev
+            except OSError:
+                mounted = False
         if require_mount and not mounted:
             return {"path": path, "used": None, "total": None, "percent": None, "available": False, "mounted": False, "error": "Sauvegarde non montée"}
         try:

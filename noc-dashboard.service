@@ -17,17 +17,19 @@ TimeoutStopSec=10
 UMask=0027
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 ReadOnlyPaths=/opt/noc-dashboard /etc/noc-dashboard.env
 # Le répertoire privé de sudo reste accessible si la distribution l'utilise.
-ReadWritePaths=-/run/sudo
+ReadWritePaths=-/run/sudo -/mnt/babamarket-backups
+StateDirectory=noc-dashboard
+StateDirectoryMode=0750
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictRealtime=true
 LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-# sudo doit pouvoir obtenir uid/gid root pour les quatre commandes exactes.
+# sudo doit pouvoir obtenir uid/gid root pour les redémarrages et la sauvegarde autorisés.
 NoNewPrivileges=false
 CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_AUDIT_WRITE
 MemoryAccounting=true

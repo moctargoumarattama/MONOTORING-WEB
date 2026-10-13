@@ -1,9 +1,10 @@
-"""API authorization, remote input validation and safe restart behavior."""
+"""Public monitoring, remote input validation and safe restart behavior."""
 from __future__ import annotations
 
 import asyncio
 import copy
 import json
+import os
 import time
 import unittest
 from contextlib import ExitStack
@@ -15,10 +16,10 @@ from starlette.requests import Request
 
 import collector
 from config import Settings
-from main import SESSION_SECONDS, create_app, session_signature
+from main import create_app
 
 
-VIEW_TOKEN = "test-view-secret"
+LEGACY_VIEW_TOKEN = "obsolete-view-secret"
 VPS_TOKEN = "test-vps-secret"
 ADMIN_TOKEN = "test-admin-secret"
 
@@ -50,7 +51,7 @@ class APITests(unittest.TestCase):
         self.stack.enter_context(patch("main.collector.Collector.close", new=AsyncMock()))
         self.stack.enter_context(patch("main.collector.Collector.collect", new=AsyncMock(
             side_effect=lambda: copy.deepcopy(local_snapshot()))))
-        self.settings = Settings(view_token=VIEW_TOKEN, vps_token=VPS_TOKEN,
+        self.settings = Settings(vps_token=VPS_TOKEN,
                                  admin_token=ADMIN_TOKEN, interval=60)
         self.client, self.runtime = self.open_client(self.settings)
 
@@ -70,67 +71,56 @@ class APITests(unittest.TestCase):
         self.stack.enter_context(patch("main.collector.run_command", new=command))
         return command
 
-    def test_snapshot_and_sse_reject_missing_or_wrong_viewer_auth(self) -> None:
-        for path in ("/api/snapshot", "/api/stream"):
-            for headers in ({}, {"Authorization": "Bearer invalid"},
-                            {"Authorization": "Bearer " + ADMIN_TOKEN}):
-                with self.subTest(path=path, headers=headers):
-                    response = self.client.get(path, headers=headers)
-                    self.assertEqual(response.status_code, 401)
-                    self.assertEqual(response.headers["www-authenticate"], "Bearer")
-        response = self.client.get("/api/snapshot", headers={"Authorization": "Bearer " + VIEW_TOKEN})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["hostname"], "test-host")
-
-    def test_login_cookie_logout_and_security_headers(self) -> None:
-        wrong = self.client.post("/api/login", json={"token": "invalid-secret"})
-        self.assertEqual(wrong.status_code, 401)
-        self.assertNotIn("invalid-secret", wrong.text)
-        login = self.client.post("/api/login", json={"token": VIEW_TOKEN})
-        self.assertEqual(login.status_code, 200)
-        self.assertNotIn(VIEW_TOKEN, login.text)
-        cookie = login.headers["set-cookie"].lower()
-        self.assertIn("httponly", cookie)
-        self.assertIn("samesite=strict", cookie)
+    def test_snapshot_is_public_and_preserves_security_headers(self) -> None:
+        for headers in ({}, {"Authorization": "Bearer invalid"},
+                        {"Authorization": "Bearer " + LEGACY_VIEW_TOKEN}):
+            with self.subTest(headers=headers):
+                response = self.client.get("/api/snapshot", headers=headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["hostname"], "test-host")
+                self.assertNotIn("www-authenticate", response.headers)
+                self.assertNotIn("set-cookie", response.headers)
         snapshot = self.client.get("/api/snapshot")
         self.assertEqual(snapshot.status_code, 200)
         self.assertEqual(snapshot.headers["x-content-type-options"], "nosniff")
         self.assertEqual(snapshot.headers["x-frame-options"], "DENY")
         self.assertEqual(snapshot.headers["cache-control"], "no-store")
-        self.assertEqual(self.client.post("/api/logout").status_code, 200)
-        self.assertEqual(self.client.get("/api/snapshot").status_code, 401)
 
-    def test_expired_forged_and_overlong_session_cookies_are_rejected(self) -> None:
-        expired = str(int(time.time()) - 30)
-        future = str(int(time.time()) + SESSION_SECONDS + 600)
-        cookies = (
-            expired + "." + session_signature(expired, VIEW_TOKEN),
-            future + "." + session_signature(future, VIEW_TOKEN),
-            str(int(time.time()) + 100) + ".forged-signature", "x" * 101,
-        )
-        for cookie in cookies:
+    def test_legacy_environment_tokens_and_session_cookies_do_not_block_monitoring(self) -> None:
+        with patch.dict(os.environ, {"NOC_VIEW_TOKEN": LEGACY_VIEW_TOKEN,
+                                     "NOC_COOKIE_SECURE": "true"}, clear=True):
+            settings = Settings.from_env()
+        client, _ = self.open_client(settings)
+        for cookie in ("1.expired-signature", "forged-session", "x" * 101):
             with self.subTest(cookie=cookie):
-                self.client.cookies.set("noc_session", cookie)
-                self.assertEqual(self.client.get("/api/snapshot").status_code, 401)
+                client.cookies.set("noc_session", cookie)
+                response = client.get("/api/snapshot")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["hostname"], "test-host")
+
+    def test_obsolete_login_and_logout_routes_are_removed(self) -> None:
+        for path in ("/api/login", "/api/logout"):
+            with self.subTest(path=path):
+                response = self.client.post(path, json={"token": LEGACY_VIEW_TOKEN})
+                self.assertEqual(response.status_code, 404)
+                self.assertNotIn("set-cookie", response.headers)
 
     def test_cross_origin_mutations_are_rejected(self) -> None:
         command = self.enable_restart_host()
-        for path, payload, headers in (
-            ("/api/login", {"token": VIEW_TOKEN}, {}),
-            ("/api/logout", {}, {}),
-            ("/api/service/klasora/restart", {}, {"x-admin-token": ADMIN_TOKEN}),
-        ):
-            with self.subTest(path=path):
-                headers = {**headers, "Origin": "https://attacker.invalid"}
-                self.assertEqual(self.client.post(path, json=payload, headers=headers).status_code, 403)
+        response = self.client.post("/api/service/klasora/restart", headers={
+            "x-admin-token": ADMIN_TOKEN, "Origin": "https://attacker.invalid"})
+        self.assertEqual(response.status_code, 403)
         command.assert_not_awaited()
 
     def test_malformed_origin_is_rejected_without_server_error(self) -> None:
-        response = self.client.post("/api/login", json={"token": VIEW_TOKEN}, headers={"Origin": "http://["})
+        command = self.enable_restart_host()
+        response = self.client.post("/api/service/klasora/restart", headers={
+            "x-admin-token": ADMIN_TOKEN, "Origin": "http://["})
         self.assertEqual(response.status_code, 403)
+        command.assert_not_awaited()
 
     def test_report_requires_its_own_token_and_disabled_reporting_is_closed(self) -> None:
-        for headers in ({}, {"x-vps-token": VIEW_TOKEN}, {"x-vps-token": ADMIN_TOKEN}):
+        for headers in ({}, {"x-vps-token": LEGACY_VIEW_TOKEN}, {"x-vps-token": ADMIN_TOKEN}):
             with self.subTest(headers=headers):
                 self.assertEqual(self.client.post("/api/vps/report", json=remote_report(), headers=headers).status_code, 401)
         self.assertEqual(self.runtime.vps, {})
@@ -142,13 +132,13 @@ class APITests(unittest.TestCase):
     def test_valid_vps_report_is_published_and_becomes_stale(self) -> None:
         self.assertEqual(self.report().status_code, 200)
         self.client.portal.call(self.runtime.publish, local_snapshot())
-        published = self.client.get("/api/snapshot", headers={"Authorization": "Bearer " + VIEW_TOKEN}).json()
+        published = self.client.get("/api/snapshot").json()
         self.assertEqual(published["vps"][0]["hostname"], "vps-one")
         self.assertTrue(published["vps"][0]["healthy"])
         self.assertFalse(published["vps"][0]["stale"])
         self.runtime.vps["vps-one"]["seen"] = time.monotonic() - self.settings.vps_stale_seconds - 1
         self.client.portal.call(self.runtime.publish, local_snapshot())
-        published = self.client.get("/api/snapshot", headers={"Authorization": "Bearer " + VIEW_TOKEN}).json()
+        published = self.client.get("/api/snapshot").json()
         self.assertTrue(published["vps"][0]["stale"])
         self.assertFalse(published["vps"][0]["healthy"])
         self.assertEqual(published["global_status"], "incident")
@@ -248,7 +238,7 @@ class APITests(unittest.TestCase):
 
     def test_restart_requires_admin_and_an_allowlisted_service(self) -> None:
         command = self.enable_restart_host()
-        for token in (None, VIEW_TOKEN, VPS_TOKEN):
+        for token in (None, LEGACY_VIEW_TOKEN, VPS_TOKEN):
             headers = {"x-admin-token": token} if token else {}
             self.assertEqual(self.client.post("/api/service/klasora/restart", headers=headers).status_code, 401)
         for name in ("cloudflared", "klasora-whatsapp", "ssh", "klasora;id"):
@@ -290,7 +280,7 @@ class APITests(unittest.TestCase):
 
     def test_sse_connection_count_limit_rejects_excess_viewers(self) -> None:
         self.runtime.active_streams = self.settings.max_streams
-        response = self.client.get("/api/stream", headers={"Authorization": "Bearer " + VIEW_TOKEN})
+        response = self.client.get("/api/stream")
         self.assertEqual(response.status_code, 429)
         self.assertEqual(self.runtime.active_streams, self.settings.max_streams)
 
@@ -330,27 +320,32 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.runtime.serialized, previous_serialized)
         self.assertEqual(self.runtime.revision, previous_revision)
 
-    def test_sse_session_expiring_during_revision_wait_cannot_receive_another_snapshot(self) -> None:
-        async def exercise():
-            expires = str(int(time.time()) + 100)
-            cookie = expires + "." + session_signature(expires, VIEW_TOKEN)
+    def test_sse_without_auth_streams_new_snapshots_and_ignores_legacy_credentials(self) -> None:
+        async def exercise(extra_headers):
             scope = {
                 "type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"},
                 "http_version": "1.1", "method": "GET", "scheme": "http",
                 "path": "/api/stream", "root_path": "", "query_string": b"",
-                "headers": [(b"host", b"testserver"),
-                            (b"cookie", ("noc_session=" + cookie).encode())],
+                "headers": [(b"host", b"testserver"), *extra_headers],
                 "server": ("testserver", 80), "client": ("127.0.0.1", 1234),
             }
             first_frame = asyncio.Event()
             disconnect = asyncio.Event()
             frames = []
+            statuses = []
+            body_received = False
 
             async def receive():
+                nonlocal body_received
+                if not body_received:
+                    body_received = True
+                    return {"type": "http.request", "body": b"", "more_body": False}
                 await disconnect.wait()
                 return {"type": "http.disconnect"}
 
             async def send(message):
+                if message["type"] == "http.response.start":
+                    statuses.append(message["status"])
                 body = message.get("body", b"")
                 if b"event: snapshot" in body:
                     frames.append(body)
@@ -358,19 +353,32 @@ class APITests(unittest.TestCase):
                     if len(frames) > 1:
                         disconnect.set()
 
-            route = next(route for route in self.client.app.routes if route.path == "/api/stream")
-            response = await route.endpoint(Request(scope, receive))
-            task = asyncio.create_task(response(scope, receive, send))
-            await asyncio.wait_for(first_frame.wait(), timeout=1)
-            await asyncio.sleep(0.02)
-            with patch("main.time.time", return_value=int(expires) + 1):
-                await self.runtime.publish(local_snapshot())
+            task = asyncio.create_task(self.client.app(scope, receive, send))
+            try:
+                await asyncio.wait_for(first_frame.wait(), timeout=1)
+                await asyncio.sleep(0.02)
+                updated = local_snapshot()
+                updated["hostname"] = "updated-host"
+                await self.runtime.publish(updated)
                 await asyncio.wait_for(task, timeout=1)
-            return frames
+            finally:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+            return frames, statuses
 
-        frames = self.client.portal.call(exercise)
-        self.assertEqual(len(frames), 1)
-        self.assertEqual(self.runtime.active_streams, 0)
+        for headers in ([], [(b"cookie", b"noc_session=1.expired-signature"),
+                             (b"authorization", b"Bearer obsolete-view-secret")]):
+            with self.subTest(legacy_credentials=bool(headers)):
+                frames, statuses = self.client.portal.call(exercise, headers)
+                self.assertEqual(statuses, [200])
+                self.assertEqual(len(frames), 2)
+                data = next(line[6:] for line in frames[1].splitlines() if line.startswith(b"data: "))
+                self.assertEqual(json.loads(data)["hostname"], "updated-host")
+                self.assertEqual(self.runtime.active_streams, 0)
 
     def test_health_rejects_a_stale_snapshot_or_stopped_collection_task(self) -> None:
         self.assertEqual(self.client.get("/api/health").status_code, 200)

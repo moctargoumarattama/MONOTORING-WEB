@@ -1,7 +1,6 @@
 """Vérification d'une instance réelle, sans redémarrer aucun service."""
 import argparse
 import json
-import os
 import time
 
 import httpx
@@ -11,9 +10,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:5050")
     args = parser.parse_args()
-    token = os.environ.get("NOC_VIEW_TOKEN", "")
-    headers = {"Authorization": "Bearer " + token} if token else {}
-    with httpx.Client(trust_env=False, headers=headers, timeout=8) as client:
+    with httpx.Client(trust_env=False, timeout=8) as client:
         health = client.get(args.url + "/api/health")
         health.raise_for_status()
         response = client.get(args.url + "/api/snapshot")

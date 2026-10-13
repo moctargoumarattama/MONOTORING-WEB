@@ -1,0 +1,4 @@
+# Option locale uniquement : pas d'import dans le processus FastAPI.
+# Version publiée vérifiée : https://pypi.org/project/faster-whisper/1.2.1/
+faster-whisper==1.2.1
+# Conversion des notes OGG/Opus : apt install ffmpeg (aucune dépendance Python).

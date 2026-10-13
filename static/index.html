@@ -227,6 +227,13 @@
       .terminal-card{height:190px}
       footer{font-size:8px;flex-wrap:wrap;gap:8px}
     }
+    /* Deux flux supplémentaires, dans les panneaux existants. */
+    .remote-heading{gap:8px;align-items:center}.remote-heading h2{font-size:9px;letter-spacing:.055em;line-height:1.5}.remote-heading .meta{font-size:8px;white-space:nowrap;color:var(--red)}
+    .remote-panel{height:146px;display:flex;flex-direction:column;overflow:hidden}.remote-toolbar{display:flex;align-items:center;justify-content:space-between;gap:7px;padding:7px 10px;border-bottom:1px solid var(--line);background:#131d2c;flex-shrink:0}.remote-tabs{display:flex;gap:4px}.remote-tab{padding:5px 8px;background:transparent;border:1px solid transparent;border-radius:5px;color:#7e91ad;font-size:9px}.remote-tab[aria-selected="true"]{background:#1b3442;border-color:#31535e;color:var(--cyan)}.remote-tab:hover{color:var(--cyan)}.sentinel-agent{font:8px var(--mono);display:flex;align-items:center;gap:5px;color:var(--muted);white-space:nowrap}.sentinel-agent .led{width:4px;height:4px;box-shadow:none}.sentinel-agent[data-tone="success"]{color:var(--green)}.sentinel-agent[data-tone="warning"]{color:var(--amber)}.sentinel-agent[data-tone="error"]{color:var(--red)}.remote-panel .remote-content{flex:1;min-height:0;max-height:none;overflow:auto;scrollbar-width:thin;scrollbar-color:#2b3c54 transparent;border:0;border-radius:0;background:transparent}.remote-panel .vps-empty{padding:14px 12px;min-height:0}.remote-panel .vps-empty-icon{width:26px;height:26px}.remote-panel .vps-empty strong{font-size:10px}.remote-panel .vps-empty p{font-size:9px;margin-top:5px}.sentinel-empty{padding:16px 13px;color:var(--muted);font-size:10px;line-height:1.7}.sentinel-empty strong{display:block;color:#a7bad4;font-weight:500;margin-bottom:4px}.sentinel-incident{padding:9px 12px;border-bottom:1px solid #233045}.sentinel-incident:last-child{border:0}.sentinel-line{display:flex;align-items:center;justify-content:space-between;gap:7px;font:9px var(--mono)}.sentinel-source{min-width:0;overflow-wrap:anywhere;color:#d1def0}.sentinel-source .country-flag{font-family:var(--sans);margin-right:5px;font-size:12px}.sentinel-result{font-size:7px;flex-shrink:0;color:var(--amber)}.sentinel-result[data-blocked="true"]{color:var(--green)}.sentinel-credentials{font:8px/1.6 var(--mono);color:#9aadc8;margin-top:5px;overflow-wrap:anywhere;white-space:pre-wrap}.sentinel-meta{display:flex;justify-content:space-between;gap:7px;font:7px/1.5 var(--mono);color:#6c83a2;margin-top:4px;overflow-wrap:anywhere}.sentinel-queue-warning{padding:5px 10px;border-bottom:1px solid var(--line);color:var(--amber);font-size:8px;flex-shrink:0}
+    .voice-strip{display:flex;align-items:center;gap:8px;min-height:28px;padding:6px 13px;background:#142532;border-bottom:1px solid #2a4151;flex-shrink:0}.voice-strip>.icon{width:12px;height:12px;color:var(--cyan)}.voice-trigger{background:none;border:0;text-align:left;padding:0;display:flex;align-items:center;gap:8px;min-width:0;flex:1;overflow:hidden;font-size:9px}.voice-kicker{font-size:8px;letter-spacing:.045em;color:var(--cyan);font-weight:600;white-space:nowrap}.voice-summary{color:#8fa5c1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.voice-status{font:7px var(--mono);color:var(--muted);white-space:nowrap}.voice-status[data-tone="success"]{color:var(--green)}.voice-status[data-tone="warning"]{color:var(--amber)}.voice-status[data-tone="error"]{color:var(--red)}.voice-trigger:disabled{opacity:1;cursor:default}.voice-trigger:not(:disabled):hover .voice-summary{color:#cfdfef}.voice-detail-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:26vh;overflow:auto;margin-top:8px;font-size:12px;line-height:1.8;color:#c4d2e5}.voice-detail-label{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--cyan);margin-top:19px}.voice-detail-meta{font:9px/1.7 var(--mono);color:var(--muted);margin-top:11px}
+    @media(min-width:1121px) and (max-height:800px){.remote-panel{height:146px}}
+    @media(max-width:1120px){.remote-panel{height:146px}}
+    @media(max-width:640px){.remote-heading h2{font-size:9px}.remote-panel{height:146px}.voice-strip{padding:6px 10px;gap:6px}.voice-trigger{gap:6px}.voice-kicker{font-size:7px}.voice-summary{font-size:8px}.voice-status{font-size:6px}.voice-detail-text{font-size:11px}}
   </style>
 </head>
 <body>
@@ -261,14 +268,23 @@
       <section id="services" aria-labelledby="services-title"><div class="section-heading"><h2 id="services-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>Services & applications</h2><span class="meta" id="service-count">— / 4 EN LIGNE</span></div><div class="services-grid" id="services-grid"></div></section>
       <div class="bottom-grid">
         <section id="infrastructure" aria-labelledby="infrastructure-title"><div class="section-heading"><h2 id="infrastructure-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 17H6a4 4 0 0 1-.7-7.9 7 7 0 0 1 13.4 0A4 4 0 0 1 18 17h-2M12 13v8M9 18l3 3 3-3"/></svg>Infrastructure & réseau</h2><span class="meta">CONNECTIVITÉ</span></div><div class="network-grid"><article class="card network-card"><div class="network-top"><div class="network-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17a4 4 0 0 1-.6-7.8A6 6 0 0 1 16 7a5 5 0 0 1 2 10H5ZM8 13l2-2 2 2 2-2 2 2"/></svg></div><span class="badge" id="cloudflare-badge"><span class="led"></span><span>EN ATTENTE</span></span></div><h3 class="network-name">Cloudflare Tunnel</h3><p class="network-meta">cloudflared</p><div class="network-footer"><span>État systemd</span><strong id="cloudflare-state">—</strong></div><p class="network-error" id="cloudflare-error" hidden></p></article><article class="card network-card"><div class="network-top"><div class="network-icon whatsapp"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13.4 7.9L3 21l1.6-4.6A9 9 0 1 1 21 11.5Z"/><path d="M8.5 7.5c-2 3 1 6 4 8l2-1.5-2-2-1 1c-1.5-1-2.5-2-3-3l1-1-1-1.5Z"/></svg></div><span class="badge" id="whatsapp-badge"><span class="led"></span><span>EN ATTENTE</span></span></div><h3 class="network-name">Passerelle WhatsApp</h3><p class="network-meta" id="whatsapp-phone">Session en attente</p><div class="network-footer"><span id="whatsapp-state">klasora-whatsapp</span><strong id="whatsapp-latency">— ms</strong></div><p class="network-error" id="whatsapp-error" hidden></p></article></div></section>
-        <section id="remote-servers" aria-labelledby="vps-title"><div class="section-heading"><h2 id="vps-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/></svg>Serveurs distants</h2><span class="meta" id="vps-count">0 VPS</span></div><div class="card vps-panel" id="vps-list"><div class="vps-empty"><div class="vps-empty-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="3"/></svg></div><div><strong>En attente de télémétrie</strong><p>Les VPS apparaîtront dès leur premier rapport.</p></div></div></div></section>
-        <section id="events" aria-labelledby="events-title"><div class="section-heading"><h2 id="events-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 5 5-5 5M12 17h8"/></svg>Journal d’événements</h2><span class="meta" id="event-count">0 ÉVÉNEMENT</span></div><div class="card terminal-card"><div class="terminal-header"><div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div><span class="terminal-name">noc / live-events</span><div class="console-controls"><button class="console-button" id="autoscroll-button" type="button" aria-pressed="true">Défilement auto</button></div></div><div class="events-list" id="events-list" role="log" aria-label="Événements de supervision" aria-live="polite" aria-relevant="additions"><p class="console-empty" id="events-empty">Connexion au collecteur…<br>Les changements d’état s’afficheront ici.<span class="terminal-cursor" aria-hidden="true"></span></p></div><div class="terminal-footer"><span id="console-state">EN ATTENTE DU FLUX</span><span>200 événements max.</span></div></div></section>
+        <section id="remote-servers" aria-labelledby="vps-title">
+          <div class="section-heading remote-heading"><h2 id="vps-title">Radar Sentinel & cyberdéfense</h2><span class="meta" id="sentinel-block-count" title="IP bloquées aujourd’hui">— IP BLOQUÉES</span></div>
+          <div class="card remote-panel">
+            <div class="remote-toolbar"><div class="remote-tabs" role="tablist" aria-label="Serveurs distants et cyberdéfense"><button class="remote-tab" id="vps-tab" type="button" role="tab" aria-selected="false" aria-controls="vps-list" tabindex="-1"><span id="vps-count">0 VPS</span></button><button class="remote-tab" id="sentinel-tab" type="button" role="tab" aria-selected="true" aria-controls="sentinel-list">Sentinel</button></div><span class="sentinel-agent" id="sentinel-agent" data-tone="neutral"><span class="led"></span><span id="sentinel-agent-text">EN ATTENTE</span></span></div>
+            <div class="sentinel-queue-warning" id="sentinel-queue-warning" hidden></div>
+            <div class="vps-panel remote-content" id="vps-list" role="tabpanel" aria-labelledby="vps-tab" tabindex="0" hidden><div class="vps-empty"><div><strong>En attente de télémétrie</strong><p>Les VPS apparaîtront dès leur premier rapport.</p></div></div></div>
+            <div class="remote-content" id="sentinel-list" role="tabpanel" aria-labelledby="sentinel-tab" tabindex="0"><div class="sentinel-empty"><strong>En attente de Sentinel</strong>Le statut de l’agent apparaîtra au prochain relevé.</div></div>
+          </div>
+        </section>
+        <section id="events" aria-labelledby="events-title"><div class="section-heading"><h2 id="events-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 5 5-5 5M12 17h8"/></svg>Journal d’événements</h2><span class="meta" id="event-count">0 ÉVÉNEMENT</span></div><div class="card terminal-card"><div class="terminal-header"><div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div><span class="terminal-name">noc / live-events</span><div class="console-controls"><button class="console-button" id="autoscroll-button" type="button" aria-pressed="true">Défilement auto</button></div></div><div class="voice-strip"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg><button id="voice-trigger" class="voice-trigger" type="button" aria-label="Voir la dernière commande WhatsApp" disabled><span class="voice-kicker">VOICE-TO-ACTION</span><span class="voice-summary" id="voice-summary">En attente du collecteur</span></button><span class="voice-status" id="voice-status">—</span></div><div class="events-list" id="events-list" role="log" aria-label="Événements de supervision" aria-live="polite" aria-relevant="additions"><p class="console-empty" id="events-empty">Connexion au collecteur…<br>Les changements d’état s’afficheront ici.<span class="terminal-cursor" aria-hidden="true"></span></p></div><div class="terminal-footer"><span id="console-state">EN ATTENTE DU FLUX</span><span>200 événements max.</span></div></div></section>
       </div>
       <footer><div class="footer-left"><span>NOC <span style="color:#8194af">/</span> MISSION CONTROL</span><span class="footer-status" id="footer-status"><span class="led"></span><span id="collector-label">Collecteur en attente</span></span></div><span>Processus : <span id="process-memory">—</span> · Flux SSE</span></footer>
     </main>
   </div>
   <template id="service-template"><article class="card service-card"><div class="service-header"><div class="service-logo"></div><div class="service-identity"><h3 class="service-name"></h3><p class="service-port"></p></div><span class="badge service-badge"><span class="led"></span><span class="service-badge-text">EN ATTENTE</span></span></div><div class="service-measure"><div><div class="service-measure-label">Réponse HTTP</div><div class="latency"><span class="service-latency">—</span><small>ms</small></div></div><span class="http-status">HTTP —</span></div><div class="service-footer"><span class="service-systemd">systemd : —</span><button class="restart-button" type="button" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>Restart</button></div><p class="service-error" hidden></p></article></template>
   <dialog id="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description"><form id="restart-form"><div class="dialog-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg></div><div class="eyebrow" style="margin-bottom:8px">ACTION ADMINISTRATEUR</div><h2 id="restart-title">Redémarrer le service</h2><p id="restart-description"></p><label class="dialog-label" for="admin-token">Jeton administrateur</label><input type="password" id="admin-token" name="admin_token" autocomplete="off" required spellcheck="false"><div class="dialog-error" id="restart-error" role="alert" hidden></div><div class="dialog-actions"><button class="button" id="restart-cancel" type="button">Annuler</button><button class="button danger" id="restart-submit" type="submit">Confirmer le redémarrage</button></div></form></dialog>
+  <dialog id="voice-dialog" aria-labelledby="voice-title"><div class="eyebrow" style="margin-bottom:8px">WHATSAPP · VOICE-TO-ACTION</div><h2 id="voice-title">Dernière commande</h2><div class="voice-detail-meta" id="voice-detail-meta"></div><div class="voice-detail-label">Transcription / message</div><div class="voice-detail-text" id="voice-transcription"></div><div class="voice-detail-label">Réponse</div><div class="voice-detail-text" id="voice-response"></div><div class="dialog-actions"><button class="button" id="voice-close" type="button">Fermer</button></div></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
   <script>
     'use strict';
@@ -302,7 +318,7 @@
         {name:'babamarket', label:'BabaMarket', port:5002, monogram:'BM'},
         {name:'moc-mal', label:'Moc-Mal', port:5003, monogram:'MC'}
       ];
-      const state = {snapshot:null, stream:null, lastReceipt:0, lastTimestamp:null, history:[], seenEvents:new Set(), autoScroll:true, stale:true, probePending:false, lastProbe:0, restartService:null, toastTimer:null};
+      const state = {snapshot:null, stream:null, lastReceipt:0, lastTimestamp:null, history:[], seenEvents:new Set(), autoScroll:true, stale:true, probePending:false, lastProbe:0, restartService:null, toastTimer:null, voiceCommand:null, sentinelSignature:null, remoteTab:'sentinel'};
       const serviceNodes = new Map();
       serviceDefinitions.forEach(definition => {
         const card = $('service-template').content.firstElementChild.cloneNode(true);
@@ -487,6 +503,87 @@
         container.replaceChildren(fragment);
       }
       function varColor(name) { return 'var(--' + name + ')'; }
+      function selectRemoteTab(name, focus = false) {
+        state.remoteTab = name === 'vps' ? 'vps' : 'sentinel';
+        ['vps', 'sentinel'].forEach(tab => {
+          const selected = tab === state.remoteTab, button = $(tab + '-tab');
+          button.setAttribute('aria-selected', String(selected)); button.tabIndex = selected ? 0 : -1;
+          $(tab + '-list').hidden = !selected;
+          if (focus && selected) button.focus();
+        });
+        try { localStorage.setItem('noc.remote-tab', state.remoteTab); } catch { /* Preferences are optional. */ }
+      }
+      function renderSentinel(sentinel) {
+        const data = sentinel && typeof sentinel === 'object' ? sentinel : null;
+        const configured = data?.configured === true;
+        const active = configured && data.agent_status === 'active';
+        const disconnected = configured && data.agent_status === 'disconnected';
+        const status = !data ? 'EN ATTENTE' : !configured ? 'NON CONFIGURÉ' : active ? 'AGENT ACTIF' : disconnected ? 'DÉCONNECTÉ' : 'AGENT EN ATTENTE';
+        set('sentinel-agent-text', status); $('sentinel-agent').dataset.tone = active ? 'success' : disconnected ? 'error' : configured ? 'warning' : 'neutral';
+        $('sentinel-agent').title = dateValid(data?.last_seen) ? 'Dernier rapport : ' + new Date(data.last_seen).toLocaleString('fr-FR') : 'Aucun rapport reçu';
+        set('sentinel-block-count', (data && isNumber(data.blocked_today) ? numeric(data.blocked_today) : '—') + ' IP BLOQUÉES');
+        const dropped = isNumber(data?.queue_dropped) && data.queue_dropped > 0;
+        $('sentinel-queue-warning').hidden = !dropped;
+        set('sentinel-queue-warning', dropped ? numeric(data.queue_dropped) + ' rapport(s) écarté(s) · file saturée' : '');
+        const incidents = Array.isArray(data?.incidents) ? data.incidents.filter(item => item && typeof item === 'object').slice(-200).sort((a,b) => (dateValid(b.timestamp) ? new Date(b.timestamp).getTime() : 0) - (dateValid(a.timestamp) ? new Date(a.timestamp).getTime() : 0)) : [];
+        const signature = JSON.stringify([configured, status, incidents]);
+        if (signature === state.sentinelSignature) return;
+        state.sentinelSignature = signature;
+        const list = $('sentinel-list'), previousScroll = list.scrollTop, previousHeight = list.scrollHeight;
+        const fragment = document.createDocumentFragment();
+        if (!incidents.length) {
+          const empty = document.createElement('div'); empty.className = 'sentinel-empty';
+          const title = document.createElement('strong'), note = document.createElement('span');
+          title.textContent = !data ? 'En attente de Sentinel' : !configured ? 'Sentinel non configuré' : active ? 'Aucune tentative signalée' : disconnected ? 'Agent Sentinel déconnecté' : 'En attente du premier rapport';
+          note.textContent = !data ? 'Le statut apparaîtra au prochain relevé.' : !configured ? 'Aucun agent de cyberdéfense configuré.' : active ? 'Les tentatives apparaîtront ici en direct.' : 'Aucun incident reçu par le tableau de bord.';
+          empty.append(title, note); fragment.append(empty);
+        }
+        incidents.forEach(incident => {
+          const row = document.createElement('article'); row.className = 'sentinel-incident';
+          const line = document.createElement('div'); line.className = 'sentinel-line';
+          const source = document.createElement('span'); source.className = 'sentinel-source';
+          const code = typeof incident.country_code === 'string' ? incident.country_code.toUpperCase() : '';
+          if (/^[A-Z]{2}$/.test(code)) {
+            const flag = document.createElement('span'); flag.className = 'country-flag';
+            flag.textContent = String.fromCodePoint(...Array.from(code).map(character => character.charCodeAt(0) + 127397));
+            flag.title = incident.country_name || code; source.append(flag);
+          }
+          source.append(document.createTextNode(incident.source_ip || 'IP inconnue'));
+          const result = document.createElement('span'); result.className = 'sentinel-result'; result.dataset.blocked = String(incident.blocked === true); result.textContent = incident.blocked === true ? 'IP BLOQUÉE' : 'OBSERVÉE';
+          line.append(source, result);
+          const credentials = document.createElement('div'); credentials.className = 'sentinel-credentials';
+          credentials.textContent = 'Identifiants : ' + (typeof incident.username === 'string' ? incident.username || '(vide)' : '—') + ' / ' + (typeof incident.password === 'string' ? incident.password || '(vide)' : '—');
+          const meta = document.createElement('div'); meta.className = 'sentinel-meta';
+          const country = document.createElement('span'); country.textContent = incident.country_name || (code || 'Pays inconnu');
+          const timestamp = document.createElement('time'); timestamp.textContent = time(incident.timestamp);
+          if (dateValid(incident.timestamp)) { timestamp.dateTime = incident.timestamp; timestamp.title = new Date(incident.timestamp).toLocaleString('fr-FR'); }
+          meta.append(country, timestamp); row.append(line, credentials, meta); row.title = incident.agent ? 'Agent : ' + incident.agent : ''; fragment.append(row);
+        });
+        list.replaceChildren(fragment);
+        if (previousScroll > 0) list.scrollTop = Math.max(0, previousScroll + list.scrollHeight - previousHeight);
+      }
+      const voiceStatuses = {queued:'EN FILE', processing:'EN COURS', completed:'TERMINÉ', failed:'ÉCHEC'};
+      const voiceActions = {pending:'Transcription', status:'État système', restart:'Redémarrage', backup:'Sauvegarde', unknown:'Commande non reconnue'};
+      function updateVoiceDetails() {
+        const command = state.voiceCommand;
+        if (!command) return;
+        set('voice-detail-meta', (command.source === 'voice' ? 'Message vocal' : 'Message texte') + ' · ' + time(command.timestamp) + ' · ' + (voiceStatuses[command.status] || 'État inconnu') + '\n' + (voiceActions[command.action] || 'Action inconnue') + (command.service ? ' · ' + command.service : ''));
+        set('voice-transcription', typeof command.transcription === 'string' && command.transcription ? command.transcription : 'Aucune transcription disponible.');
+        set('voice-response', typeof command.response === 'string' && command.response ? command.response : ['queued', 'processing'].includes(command.status) ? 'Traitement en cours…' : 'Aucune réponse disponible.');
+      }
+      function renderVoice(voice) {
+        const data = voice && typeof voice === 'object' ? voice : null;
+        const command = data?.last_command && typeof data.last_command === 'object' ? data.last_command : null;
+        state.voiceCommand = command;
+        $('voice-trigger').disabled = !command;
+        const enabled = data?.enabled === true;
+        set('voice-summary', command ? (command.source === 'voice' ? 'Vocal' : 'Texte') + ' · ' + (voiceActions[command.action] || 'Action inconnue') + (command.service ? ' ' + command.service : '') + (command.transcription ? ' · ' + command.transcription : '') : !data ? 'En attente du collecteur' : enabled ? 'WhatsApp · en attente de commande' : 'Désactivé');
+        const status = data?.busy === true ? 'EN COURS' : command ? voiceStatuses[command.status] || 'INCONNU' : enabled ? 'PRÊT' : data ? 'INACTIF' : '—';
+        set('voice-status', status);
+        $('voice-status').dataset.tone = command?.status === 'failed' ? 'error' : data?.busy || ['queued', 'processing'].includes(command?.status) ? 'warning' : enabled || command?.status === 'completed' ? 'success' : 'neutral';
+        $('voice-trigger').title = command ? (command.transcription || 'Aucune transcription') + '\n' + (command.response || 'Réponse en attente') : enabled ? 'Commande WhatsApp par message vocal ou texte' : 'Voice-to-Action désactivé';
+        if ($('voice-dialog').open) updateVoiceDetails();
+      }
       function renderEvents(events = []) {
         if (!Array.isArray(events)) return;
         const list = $('events-list');
@@ -518,6 +615,7 @@
         set('last-update', time(snapshot.timestamp)); set('uptime', 'UPTIME ' + ageLabel(snapshot.uptime_seconds));
         renderHardware(snapshot.hardware); renderServices(snapshot.services, snapshot.actions?.restart_enabled === true);
         renderInfrastructure(snapshot.infrastructure); renderVps(snapshot.vps); renderEvents(snapshot.events);
+        renderSentinel(snapshot.sentinel); renderVoice(snapshot.voice);
         if (snapshot.timestamp !== state.lastTimestamp) {
           const cpu = bounded(snapshot.hardware?.cpu?.percent);
           if (cpu !== null) { state.history.push(cpu); if (state.history.length > 120) state.history.shift(); drawTrend(); }
@@ -584,6 +682,19 @@
         set('restart-description', 'Le service « ' + label + ' » sera redémarré. Une courte interruption de son application est possible.');
         $('restart-dialog').showModal(); $('admin-token').focus();
       }
+      ['vps', 'sentinel'].forEach(tab => {
+        $(tab + '-tab').addEventListener('click', () => selectRemoteTab(tab));
+        $(tab + '-tab').addEventListener('keydown', event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          selectRemoteTab(event.key === 'Home' ? 'vps' : event.key === 'End' ? 'sentinel' : state.remoteTab === 'vps' ? 'sentinel' : 'vps', true);
+        });
+      });
+      let savedRemoteTab = 'sentinel';
+      try { savedRemoteTab = localStorage.getItem('noc.remote-tab') || 'sentinel'; } catch { /* Storage can be unavailable. */ }
+      selectRemoteTab(savedRemoteTab);
+      $('voice-trigger').addEventListener('click', () => { if (state.voiceCommand) { updateVoiceDetails(); $('voice-dialog').showModal(); } });
+      $('voice-close').addEventListener('click', () => $('voice-dialog').close());
       $('restart-cancel').addEventListener('click', () => $('restart-dialog').close());
       $('restart-dialog').addEventListener('close', () => { $('admin-token').value = ''; state.restartService = null; });
       $('restart-form').addEventListener('submit', async event => {

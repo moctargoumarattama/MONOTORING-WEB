@@ -1,9 +1,8 @@
-"""API NOC, authentification et flux SSE partagé, un seul worker."""
+"""API NOC, consultation directe et flux SSE partagé, un seul worker."""
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import hmac
 import json
 import logging
@@ -16,17 +15,18 @@ from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sse_starlette.sse import EventSourceResponse
 
 import collector
 from config import RESTART_ALLOWLIST, Settings
+from sentinel import SentinelManager
+from whatsapp import WhatsAppController
 
 LOGGER = logging.getLogger("noc-dashboard")
 BASE_DIR = Path(__file__).resolve().parent
-SESSION_SECONDS = 43200
 
 
 class Metrics(BaseModel):
@@ -65,11 +65,6 @@ class VPSReport(BaseModel):
         return self
 
 
-class Login(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    token: Annotated[str, Field(min_length=1, max_length=512)]
-
-
 async def limited_json(request: Request, limit: int) -> Any:
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
         raise HTTPException(415, "Content-Type application/json requis")
@@ -95,27 +90,12 @@ def validate_payload(model: type[BaseModel], data: Any) -> Any:
     try:
         return model.model_validate(data)
     except (ValidationError, ValueError):
-        # Ne jamais renvoyer le corps d'un login, qui peut contenir un secret.
+        # Les données reçues ne sont pas recopiées dans les erreurs.
         raise HTTPException(422, "Données invalides : types, limites ou champs non conformes") from None
 
 
 def token_matches(received: str | None, expected: str) -> bool:
     return bool(expected and received and hmac.compare_digest(received.encode(), expected.encode()))
-
-
-def session_signature(expires: str, secret: str) -> str:
-    return hmac.new(secret.encode(), ("noc-session:" + expires).encode(), hashlib.sha256).hexdigest()
-
-
-def valid_session(cookie: str, secret: str) -> bool:
-    if not secret or len(cookie) > 100:
-        return False
-    try:
-        expires, signature = cookie.split(".", 1)
-        expiry = int(expires)
-        return time.time() < expiry <= time.time() + SESSION_SECONDS + 60 and hmac.compare_digest(signature, session_signature(expires, secret))
-    except (ValueError, TypeError):
-        return False
 
 
 def same_origin(request: Request) -> None:
@@ -127,14 +107,6 @@ def same_origin(request: Request) -> None:
             raise HTTPException(403, "Origine non autorisée") from None
         if parts.scheme not in {"http", "https"} or parts.netloc.lower() != request.url.netloc.lower():
             raise HTTPException(403, "Origine non autorisée")
-
-
-def authorized_view(request: Request, settings: Settings) -> bool:
-    if not settings.view_token:
-        return True
-    authorization = request.headers.get("authorization", "")
-    bearer = authorization[7:] if authorization.startswith("Bearer ") else None
-    return token_matches(bearer, settings.view_token) or valid_session(request.cookies.get("noc_session", ""), settings.view_token)
 
 
 class Runtime:
@@ -151,6 +123,8 @@ class Runtime:
         self.active_streams = 0
         self.restart_locks = {name: asyncio.Lock() for name in RESTART_ALLOWLIST}
         self.restart_times: dict[str, float] = {}
+        self.sentinel = SentinelManager(settings, self)
+        self.whatsapp = WhatsAppController(settings, self, self.restart_service)
 
     def vps_snapshot(self) -> list[dict[str, Any]]:
         now = time.monotonic()
@@ -168,18 +142,51 @@ class Runtime:
             result.append({**item["report"], "last_seen": item["last_seen"], "age_seconds": round(age, 1), "stale": stale, "healthy": healthy})
         return sorted(result, key=lambda entry: entry["hostname"])
 
-    async def publish(self, snapshot: dict[str, Any]) -> None:
+    async def publish(self, snapshot: dict[str, Any], *, collected: bool = True) -> None:
         snapshot["vps"] = self.vps_snapshot()
         if any(not item["healthy"] for item in snapshot["vps"]):
             snapshot["global_status"] = "incident"
         snapshot["events"] = list(self.collector.events)
+        snapshot["sentinel"] = self.sentinel.snapshot()
+        snapshot["voice"] = self.whatsapp.snapshot()
         serialized = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         self.latest = snapshot
         self.serialized = serialized
-        self.last_published = time.monotonic()
+        if collected:
+            self.last_published = time.monotonic()
         async with self.changed:
             self.revision += 1
             self.changed.notify_all()
+
+    async def publish_module_update(self) -> None:
+        if self.latest is not None:
+            await self.publish(dict(self.latest), collected=False)
+
+    async def restart_service(self, name: str) -> dict[str, Any]:
+        """Chemin commun UI/WhatsApp après l'authentification propre au canal."""
+        if name not in RESTART_ALLOWLIST:
+            raise HTTPException(404, "Service non autorisé")
+        sudo = shutil.which("sudo")
+        systemctl = self.collector.systemctl
+        if not self.settings.enable_restart or not systemctl or not sudo:
+            raise HTTPException(503, "Redémarrages indisponibles sur cet hôte")
+        lock = self.restart_locks[name]
+        if lock.locked() or time.monotonic() - self.restart_times.get(name, -math.inf) < 30:
+            raise HTTPException(429, "Redémarrage déjà demandé : patienter 30 secondes")
+        async with lock:
+            self.restart_times[name] = time.monotonic()
+            self.collector.add_event("warning", f"Redémarrage demandé · {name}")
+            try:
+                code, _, _ = await collector.run_command([sudo, "-n", systemctl, "--no-block", "restart", name + ".service"], 5)
+            except (OSError, asyncio.TimeoutError, RuntimeError):
+                self.collector.add_event("error", f"Redémarrage non confirmé · {name}")
+                raise HTTPException(504, "Commande expirée ou indisponible; vérifier le journal") from None
+            if code != 0:
+                self.collector.add_event("error", f"Redémarrage refusé · {name}")
+                raise HTTPException(502, "systemd a refusé la commande; vérifier sudoers et le journal")
+            self.collector.add_event("info", f"Redémarrage accepté par systemd · {name}")
+            await self.publish_module_update()
+            return {"ok": True, "service": name, "message": "Redémarrage accepté. Le collecteur vérifiera le retour du service."}
 
     async def collect_loop(self) -> None:
         while True:
@@ -225,6 +232,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime = Runtime(settings)
         application.state.runtime = runtime
         await runtime.collector.start()
+        await runtime.sentinel.start()
+        await runtime.whatsapp.start()
         task = asyncio.create_task(runtime.collect_loop(), name="noc-collector")
         runtime.collect_task = task
         try:
@@ -234,13 +243,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
             await runtime.collector.close()
+            await runtime.whatsapp.close()
+            await runtime.sentinel.close()
 
     application = FastAPI(title="NOC · Tour de contrôle", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-
-    async def viewer(request: Request) -> None:
-        if authorized_view(request, settings):
-            return
-        raise HTTPException(401, "Authentification requise", headers={"WWW-Authenticate": "Bearer"})
 
     @application.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -268,31 +274,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         collecting = bool(last_success and not latest["collector"].get("error") and time.monotonic() - runtime.last_published <= max(10, 3 * settings.interval) and runtime.collect_task and not runtime.collect_task.done())
         return JSONResponse({"status": "ok" if collecting else "starting" if latest is None else "degraded", "collector_ready": collecting, "interval_seconds": settings.interval, "process_id": os.getpid()}, status_code=200 if collecting else 503)
 
-    @application.post("/api/login")
-    async def login(request: Request, response: Response):
-        same_origin(request)
-        payload: Login = validate_payload(Login, await limited_json(request, 4096))
-        if settings.view_token and not token_matches(payload.token, settings.view_token):
-            raise HTTPException(401, "Jeton incorrect")
-        expires = str(int(time.time()) + SESSION_SECONDS)
-        if settings.view_token:
-            response.set_cookie("noc_session", expires + "." + session_signature(expires, settings.view_token), max_age=SESSION_SECONDS, httponly=True, secure=settings.cookie_secure or request.url.scheme == "https", samesite="strict", path="/")
-        return {"ok": True}
-
-    @application.post("/api/logout")
-    async def logout(request: Request, response: Response):
-        same_origin(request)
-        response.delete_cookie("noc_session", path="/")
-        return {"ok": True}
-
-    @application.get("/api/snapshot", dependencies=[Depends(viewer)])
+    @application.get("/api/snapshot")
     async def snapshot():
         runtime: Runtime = application.state.runtime
         if runtime.latest is None:
             raise HTTPException(503, "Première collecte en cours", headers={"Retry-After": "2"})
         return Response(content=runtime.serialized, media_type="application/json")
 
-    @application.get("/api/stream", dependencies=[Depends(viewer)])
+    @application.get("/api/stream")
     async def stream(request: Request):
         runtime: Runtime = application.state.runtime
         if runtime.active_streams >= settings.max_streams:
@@ -304,8 +293,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             while True:
                 if await request.is_disconnected():
                     break
-                if not authorized_view(request, settings):
-                    break
                 async with runtime.changed:
                     if runtime.revision == revision or runtime.latest is None:
                         try:
@@ -314,8 +301,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             continue
                     revision = runtime.revision
                     data = runtime.serialized
-                if not authorized_view(request, settings):
-                    break
                 yield {"event": "snapshot", "id": str(revision), "retry": 2000, "data": data}
 
         return CountedEventSourceResponse(events(), runtime=runtime, ping=15, send_timeout=10, headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache, no-store"})
@@ -344,27 +329,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not token_matches(request.headers.get("x-admin-token"), settings.admin_token):
             raise HTTPException(401, "Jeton administrateur incorrect")
         runtime: Runtime = application.state.runtime
-        sudo = shutil.which("sudo")
-        systemctl = runtime.collector.systemctl
-        if not settings.enable_restart or not systemctl or not sudo:
-            raise HTTPException(503, "Redémarrages indisponibles sur cet hôte")
-        lock = runtime.restart_locks[name]
-        if lock.locked() or time.monotonic() - runtime.restart_times.get(name, -math.inf) < 30:
-            raise HTTPException(429, "Redémarrage déjà demandé : patienter 30 secondes")
-        async with lock:
-            runtime.restart_times[name] = time.monotonic()
-            runtime.collector.add_event("warning", f"Redémarrage demandé · {name}")
-            try:
-                # --no-block évite de tuer une transaction systemd au timeout HTTP.
-                code, _, _ = await collector.run_command([sudo, "-n", systemctl, "--no-block", "restart", name + ".service"], 5)
-            except (OSError, asyncio.TimeoutError, RuntimeError):
-                runtime.collector.add_event("error", f"Redémarrage non confirmé · {name}")
-                raise HTTPException(504, "Commande expirée ou indisponible; vérifier le journal") from None
-            if code != 0:
-                runtime.collector.add_event("error", f"Redémarrage refusé · {name}")
-                raise HTTPException(502, "systemd a refusé la commande; vérifier sudoers et le journal")
-            runtime.collector.add_event("info", f"Redémarrage accepté par systemd · {name}")
-            return {"ok": True, "service": name, "message": "Redémarrage accepté. Le collecteur vérifiera le retour du service."}
+        return await runtime.restart_service(name)
+
+    @application.post("/api/whatsapp/webhook")
+    async def whatsapp_webhook(request: Request):
+        if not settings.admin_phone_number or not settings.whatsapp_webhook_token:
+            raise HTTPException(503, "Commandes WhatsApp non configurées")
+        if not token_matches(request.headers.get("x-gateway-secret"), settings.whatsapp_webhook_token):
+            raise HTTPException(403, "Requête non autorisée")
+        payload = await limited_json(request, 32768)
+        if not isinstance(payload, dict):
+            raise HTTPException(422, "Message WhatsApp invalide")
+        try:
+            return await application.state.runtime.whatsapp.accept(payload)
+        except PermissionError:
+            raise HTTPException(403, "Émetteur non autorisé") from None
+        except ValueError:
+            raise HTTPException(422, "Message WhatsApp invalide") from None
+        except asyncio.QueueFull:
+            raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"}) from None
+
+    @application.post("/api/sentinel/incident")
+    async def sentinel_incident(request: Request):
+        if not settings.vps_token:
+            raise HTTPException(503, "Sentinel désactivé : jeton VPS non configuré")
+        if not token_matches(request.headers.get("x-vps-token"), settings.vps_token):
+            raise HTTPException(401, "Jeton VPS incorrect")
+        return await application.state.runtime.sentinel.accept(await limited_json(request, 16384))
 
     return application
 
@@ -375,4 +366,6 @@ if __name__ == "__main__":
     import uvicorn
     settings = Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     uvicorn.run(app, host=settings.host, port=settings.port, workers=1, loop="asyncio", http="h11", ws="none", access_log=False, forwarded_allow_ips="127.0.0.1")

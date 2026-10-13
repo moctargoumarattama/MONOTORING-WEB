@@ -6,13 +6,13 @@ from pathlib import Path
 
 project = Path(__file__).resolve().parent.parent
 destination = project.parent / "noc-dashboard.tar.gz"
-excluded = {".venv", "venv", ".qa", "__pycache__", ".pytest_cache", ".git"}
+excluded = {".venv", "venv", "voice-venv", "models", ".qa", "__pycache__", ".pytest_cache", ".git"}
 files = sorted(path for path in project.rglob("*") if path.is_file() and not any(part in excluded for part in path.relative_to(project).parts))
 with tarfile.open(destination, "w:gz") as archive:
     for path in files:
         relative = path.relative_to(project)
         info = archive.gettarinfo(str(path), arcname="noc-dashboard/" + relative.as_posix())
-        info.mode = 0o755 if path.name in {"install.sh", "vps_agent.py"} else 0o644
+        info.mode = 0o755 if path.suffix == ".sh" or path.name in {"vps_agent.py", "vps_sentinel.py", "voice_transcribe.py"} else 0o644
         info.uid = info.gid = 0
         info.uname = info.gname = "root"
         with path.open("rb") as handle:

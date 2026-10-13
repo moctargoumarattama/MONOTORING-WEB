@@ -47,14 +47,31 @@ class Settings:
     gateway_secret: str = "secret-gateway-local-klasora-2024"
     vps_token: str = ""
     admin_token: str = ""
-    view_token: str = ""
     enable_restart: bool = True
-    cookie_secure: bool = False
     vps_stale_seconds: float = 20.0
     vps_retention_seconds: float = 86400.0
     max_vps: int = 128
     max_streams: int = 32
     event_limit: int = 200
+    admin_phone_number: str = "212770010264"
+    whatsapp_webhook_token: str = ""
+    whatsapp_session_id: str = "1"
+    whatsapp_send_url: str = "http://127.0.0.1:3001/message/send"
+    whatsapp_send_to_field: str = "to"
+    whatsapp_send_text_field: str = "text"
+    whatsapp_media_dir: str = "/var/lib/klasora-whatsapp/media"
+    whatsapp_max_audio_bytes: int = 8 * 1024 * 1024
+    whatsapp_audio_seconds: int = 60
+    whisper_model_path: str = "/opt/noc-dashboard/models/whisper-tiny"
+    whisper_python: str = "/opt/noc-dashboard/voice-venv/bin/python"
+    whisper_timeout: float = 120.0
+    backup_script: str = "/usr/local/bin/backup-babamarket.sh"
+    backup_timeout: float = 300.0
+    voice_remote_url: str = ""
+    voice_remote_token: str = ""
+    sentinel_stale_seconds: float = 35.0
+    sentinel_geoip_enabled: bool = True
+    sentinel_state_path: str = "/var/lib/noc-dashboard/sentinel-counters.json"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -66,11 +83,28 @@ class Settings:
             gateway_secret=os.environ.get("NOC_GATEWAY_SECRET", cls.__dataclass_fields__["gateway_secret"].default),
             vps_token=os.environ.get("NOC_VPS_TOKEN", ""),
             admin_token=os.environ.get("NOC_ADMIN_TOKEN", ""),
-            view_token=os.environ.get("NOC_VIEW_TOKEN", ""),
             enable_restart=_boolean("NOC_ENABLE_RESTART", True),
-            cookie_secure=_boolean("NOC_COOKIE_SECURE", False),
             vps_stale_seconds=_number("NOC_VPS_STALE_SECONDS", 20, 5, 3600),
             vps_retention_seconds=_number("NOC_VPS_RETENTION_SECONDS", 86400, 60, 604800),
             max_vps=int(_number("NOC_MAX_VPS", 128, 1, 1024)),
             max_streams=int(_number("NOC_MAX_STREAMS", 32, 1, 128)),
+            admin_phone_number=os.environ.get("ADMIN_PHONE_NUMBER", "212770010264"),
+            whatsapp_webhook_token=os.environ.get("NOC_WHATSAPP_WEBHOOK_TOKEN", ""),
+            whatsapp_session_id=os.environ.get("NOC_WHATSAPP_SESSION_ID", "1"),
+            whatsapp_send_url=os.environ.get("NOC_WHATSAPP_SEND_URL", "http://127.0.0.1:3001/message/send"),
+            whatsapp_send_to_field=os.environ.get("NOC_WHATSAPP_SEND_TO_FIELD", "to"),
+            whatsapp_send_text_field=os.environ.get("NOC_WHATSAPP_SEND_TEXT_FIELD", "text"),
+            whatsapp_media_dir=os.environ.get("NOC_WHATSAPP_MEDIA_DIR", "/var/lib/klasora-whatsapp/media"),
+            whatsapp_max_audio_bytes=int(_number("NOC_WHATSAPP_MAX_AUDIO_BYTES", 8388608, 1024, 8388608)),
+            whatsapp_audio_seconds=int(_number("NOC_WHATSAPP_AUDIO_SECONDS", 60, 1, 60)),
+            whisper_model_path=os.environ.get("NOC_WHISPER_MODEL_PATH", "/opt/noc-dashboard/models/whisper-tiny"),
+            whisper_python=os.environ.get("NOC_WHISPER_PYTHON", "/opt/noc-dashboard/voice-venv/bin/python"),
+            whisper_timeout=_number("NOC_WHISPER_TIMEOUT", 120, 5, 300),
+            backup_script=os.environ.get("NOC_BACKUP_SCRIPT", os.environ.get("NOC_BABAMARKET_BACKUP_SCRIPT", "/usr/local/bin/backup-babamarket.sh")) or "/usr/local/bin/backup-babamarket.sh",
+            backup_timeout=_number("NOC_BACKUP_TIMEOUT", 300, 5, 1800),
+            voice_remote_url=os.environ.get("NOC_VOICE_REMOTE_URL", ""),
+            voice_remote_token=os.environ.get("NOC_VOICE_REMOTE_TOKEN", ""),
+            sentinel_stale_seconds=_number("NOC_SENTINEL_STALE_SECONDS", 35, 15, 300),
+            sentinel_geoip_enabled=_boolean("NOC_SENTINEL_GEOIP", True),
+            sentinel_state_path=os.environ.get("NOC_SENTINEL_STATE_PATH", "/var/lib/noc-dashboard/sentinel-counters.json"),
         )

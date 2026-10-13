@@ -31,7 +31,7 @@ done
 python3.11 -c 'import sys, venv; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
     || fail "Python 3.11 avec le module venv est requis."
 
-PROJECT_FILES=(requirements.txt config.py collector.py main.py vps_agent.py install.sh noc-dashboard.service vps-agent.service README.md .gitignore)
+PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service README.md MODULES.md .gitignore)
 for relative in "${PROJECT_FILES[@]}" static/index.html; do
     [[ -f "$SOURCE_DIR/$relative" && ! -L "$SOURCE_DIR/$relative" ]] || fail "fichier source manquant ou lien symbolique : $relative."
 done
@@ -41,7 +41,7 @@ import ast
 import pathlib
 import sys
 directory = pathlib.Path(sys.argv[1])
-for name in ("config.py", "collector.py", "main.py", "vps_agent.py"):
+for name in ("config.py", "collector.py", "main.py", "vps_agent.py", "whatsapp.py", "voice_transcribe.py", "sentinel.py", "sentinel_crypto.py", "vps_sentinel.py"):
     ast.parse((directory / name).read_text(encoding="utf-8"), filename=name)
 PY
 
@@ -84,7 +84,7 @@ copy_project_file() {
     local relative="$1" source="$SOURCE_DIR/$1" destination="$APP_DIR/$1" mode=0640
     assert_destination "$destination"
     install -d -o root -g "$APP_USER" -m 0750 "$(dirname -- "$destination")"
-    if [[ "$relative" == install.sh || "$relative" == vps_agent.py ]]; then mode=0750; fi
+    if [[ "$relative" == *.sh || "$relative" == vps_agent.py || "$relative" == vps_sentinel.py ]]; then mode=0750; fi
     if [[ "$source" != "$destination" ]]; then
         backup_if_changed "$source" "$destination"
         if ! [[ -f "$destination" ]] || ! cmp -s -- "$source" "$destination"; then
@@ -101,15 +101,38 @@ if [[ ! -e "$ENV_FILE" ]]; then
     {
         printf '%s\n' '# Configuration NOC, lisible seulement par root et noc-dashboard.'
         printf '%s\n' 'NOC_HOST=127.0.0.1' 'NOC_PORT=5050' 'NOC_INTERVAL_SECONDS=2' 'NOC_VPS_STALE_SECONDS=20'
-        printf '%s\n' 'NOC_BACKUP_PATH=/mnt/babamarket-backups' 'NOC_ENABLE_RESTART=true' 'NOC_COOKIE_SECURE=false'
+        printf '%s\n' 'NOC_BACKUP_PATH=/mnt/babamarket-backups' 'NOC_ENABLE_RESTART=true'
         printf 'NOC_GATEWAY_SECRET=%s\n' "${NOC_GATEWAY_SECRET:-secret-gateway-local-klasora-2024}"
-        printf 'NOC_VIEW_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
         printf 'NOC_ADMIN_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
         printf 'NOC_VPS_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
     } > "$ENV_FILE"
 fi
 chown root:"$APP_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
+
+# Ajouter uniquement les nouvelles clés ; ne jamais remplacer un secret existant.
+python3.11 - "$ENV_FILE" <<'PY'
+import pathlib
+import secrets
+import sys
+path = pathlib.Path(sys.argv[1])
+original = path.read_text(encoding="utf-8")
+keys = {line.split("=", 1)[0].strip() for line in original.splitlines() if "=" in line and not line.lstrip().startswith("#")}
+defaults = {
+    "ADMIN_PHONE_NUMBER": "212770010264",
+    "NOC_WHATSAPP_WEBHOOK_TOKEN": secrets.token_hex(32),
+    "NOC_BACKUP_SCRIPT": "/usr/local/bin/backup-babamarket.sh",
+    "NOC_WHISPER_PYTHON": "/opt/noc-dashboard/voice-venv/bin/python",
+    "NOC_WHISPER_MODEL_PATH": "/opt/noc-dashboard/models/whisper-tiny",
+    "NOC_SENTINEL_STATE_PATH": "/var/lib/noc-dashboard/sentinel-counters.json",
+}
+missing = [f"{key}={value}" for key, value in defaults.items() if key not in keys]
+if missing:
+    with path.open("a", encoding="utf-8") as handle:
+        if original and not original.endswith("\n"):
+            handle.write("\n")
+        handle.write("\n".join(missing) + "\n")
+PY
 
 assert_destination "$APP_DIR/venv"
 if [[ ! -x "$APP_DIR/venv/bin/python" ]]; then
@@ -121,7 +144,7 @@ fi
 "$APP_DIR/venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r "$SOURCE_DIR/requirements.txt"
 chown -hR root:"$APP_USER" "$APP_DIR/venv"
 chmod -R go-w "$APP_DIR/venv"
-"$APP_DIR/venv/bin/python" -c 'import fastapi, uvicorn, psutil, httpx, sse_starlette'
+"$APP_DIR/venv/bin/python" -c 'import fastapi, uvicorn, psutil, httpx, sse_starlette, cryptography'
 
 # Remplace le code uniquement une fois les dépendances utilisables.
 for relative in "${PROJECT_FILES[@]}"; do copy_project_file "$relative"; done
@@ -129,11 +152,17 @@ while IFS= read -r -d '' source; do
     copy_project_file "${source#"$SOURCE_DIR/"}"
 done < <(find "$SOURCE_DIR/static" -type f -print0)
 
+# Le script d'un projet déjà installé reste intact.
+assert_destination /usr/local/bin/backup-babamarket.sh
+if [[ ! -e /usr/local/bin/backup-babamarket.sh ]]; then
+    install -o root -g root -m 0755 "$APP_DIR/backup-babamarket.sh" /usr/local/bin/backup-babamarket.sh
+fi
+
 # Aucune étoile : ces quatre commandes exactes sont les seuls redémarrages autorisés.
 STAGED_SUDOERS="$(mktemp /etc/sudoers.d/.noc-dashboard-XXXXXX)"
 printf '%s\n' \
     'Defaults:noc-dashboard timestamp_timeout=0' \
-    'noc-dashboard ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block restart merca-market.service, /usr/bin/systemctl --no-block restart klasora.service, /usr/bin/systemctl --no-block restart babamarket.service, /usr/bin/systemctl --no-block restart moc-mal.service' \
+    'noc-dashboard ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block restart merca-market.service, /usr/bin/systemctl --no-block restart klasora.service, /usr/bin/systemctl --no-block restart babamarket.service, /usr/bin/systemctl --no-block restart moc-mal.service, /usr/local/bin/backup-babamarket.sh' \
     > "$STAGED_SUDOERS"
 chmod 0440 "$STAGED_SUDOERS"
 visudo -cf "$STAGED_SUDOERS"

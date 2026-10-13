@@ -31,7 +31,7 @@ sudo systemctl status noc-dashboard.service --no-pager
 curl --fail --silent --show-error http://127.0.0.1:5050/api/health
 ```
 
-L'installateur crée le compte système `noc-dashboard`, un venv isolé et `/etc/noc-dashboard.env`. Il génère trois jetons indépendants avec `secrets.token_hex(32)`, sans les afficher. Le code appartient à `root` ; le service peut le lire mais pas le modifier. Le fichier de configuration est en `root:noc-dashboard`, mode `0640`.
+L'installateur crée le compte système `noc-dashboard`, un venv isolé et `/etc/noc-dashboard.env`. Il génère deux jetons indépendants pour les actions administrateur et les rapports VPS, avec `secrets.token_hex(32)`, sans les afficher. Le code appartient à `root` ; le service peut le lire mais pas le modifier. Le fichier de configuration est en `root:noc-dashboard`, mode `0640`.
 
 Une seconde exécution conserve le venv et la configuration existants. Les fichiers remplacés sont sauvegardés dans un dossier privé sous `/var/backups/noc-dashboard`. Le script fonctionne aussi lorsqu'il est lancé directement depuis `/opt/noc-dashboard`, sans recopier les fichiers sur eux-mêmes. Aucun paquet Python global n'est installé. L'installateur vérifie la syntaxe du code, la règle sudoers, l'unité systemd et la réponse réelle de `/api/health`.
 
@@ -42,7 +42,7 @@ $serveur = Read-Host 'Compte et hôte SSH du Dell'
 ssh -N -L 5050:127.0.0.1:5050 $serveur
 ```
 
-Ouvrez **http://127.0.0.1:5050**. La page demande le jeton de consultation créé à l'installation ; lisez-le dans une session SSH avec `sudo less /etc/noc-dashboard.env`, puis saisissez la valeur de `NOC_VIEW_TOKEN`. Le jeton administrateur est distinct et se saisit seulement lorsque vous souhaitez autoriser une action de redémarrage.
+Ouvrez **http://127.0.0.1:5050** : le tableau et ses mesures s'affichent directement, sans connexion ni jeton de consultation. Le jeton administrateur se saisit seulement lorsque vous souhaitez autoriser une action de redémarrage.
 
 ## Configuration
 
@@ -56,45 +56,45 @@ Modifiez la configuration avec `sudoedit /etc/noc-dashboard.env`, puis appliquez
 | `NOC_BACKUP_PATH` | `/mnt/babamarket-backups` ; absence ou volume non monté signalés sans inventer de métriques |
 | `NOC_VPS_STALE_SECONDS` | `20`, délai après lequel un rapport VPS est signalé ancien |
 | `NOC_GATEWAY_SECRET` | Secret de la passerelle WhatsApp communiqué dans le cahier des charges |
-| `NOC_VIEW_TOKEN` | Jeton de consultation généré ; protège les snapshots et le flux SSE |
 | `NOC_ADMIN_TOKEN` | Jeton distinct pour le header `x-admin-token` des redémarrages |
 | `NOC_VPS_TOKEN` | Jeton distinct pour le header `x-vps-token` des agents distants |
 | `NOC_ENABLE_RESTART` | `true` ; les actions nécessitent aussi Linux et un jeton administrateur |
-| `NOC_COOKIE_SECURE` | `false` pour HTTP local ; passer à `true` si l'accès navigateur se fait uniquement par HTTPS |
 
 Le secret WhatsApp est lu depuis l'environnement et envoyé uniquement à `http://127.0.0.1:3001/session/1/status`. S'il a été changé sur la passerelle, reportez la nouvelle valeur dans cette configuration. Les jetons ne sont inclus ni dans les snapshots, ni dans les événements SSE.
 
-Hors installateur, sans `NOC_VIEW_TOKEN`, la consultation est publique. Sans `NOC_ADMIN_TOKEN`, les redémarrages sont désactivés. Sans `NOC_VPS_TOKEN`, les rapports VPS sont désactivés. `/api/health` reste accessible sans jeton et ne contient pas de secret. Le login crée un cookie `HttpOnly` pour les requêtes du navigateur et `EventSource`.
+La consultation de `/`, `/api/health`, `/api/snapshot` et `/api/stream` est directe, sans jeton ni cookie. Les anciennes variables `NOC_VIEW_TOKEN` et `NOC_COOKIE_SECURE`, si elles figurent encore dans une configuration existante, sont ignorées ; vous pouvez les laisser en place. Sans `NOC_ADMIN_TOKEN`, les redémarrages sont désactivés. Sans `NOC_VPS_TOKEN`, les rapports VPS sont désactivés.
 
 Ports locaux sondés : Merca-Market `5006`, Klasora `5005`, BabaMarket `5002`, Moc-Mal `5003`. `cloudflared` est surveillé par systemd ; la passerelle utilise `klasora-whatsapp` et le port `3001`. Un service arrêté, une sonde qui expire ou une température absente sont affichés sans bloquer les autres mesures. Si systemd est indisponible, son état est explicitement `unknown`.
 
-L'unité conserve l'accès au bus systemd et autorise l'élévation nécessaire à `sudo`, avec des capacités limitées. Le fichier `/etc/sudoers.d/noc-dashboard`, vérifié par `visudo`, autorise uniquement quatre commandes `systemctl --no-block restart` exactes, sans wildcard. Le backend utilise `sudo -n` et une liste fermée de noms ; aucun nom fourni par le client n'est exécuté par un shell.
+L'unité conserve l'accès au bus systemd et autorise l'élévation nécessaire à `sudo`, avec des capacités limitées. Le fichier `/etc/sudoers.d/noc-dashboard`, vérifié par `visudo`, autorise les quatre commandes `systemctl --no-block restart` exactes et le script `/usr/local/bin/backup-babamarket.sh` sans argument, sans wildcard. Le backend utilise `sudo -n` et une liste fermée de noms ; aucun nom fourni par le client n'est exécuté par un shell.
+
+## Mise à jour d'une installation existante
+
+Sur un Dell qui utilise encore l'ancienne version, ces deux commandes rendent immédiatement la consultation accessible sans jeton. Elles vident uniquement l'ancien jeton de consultation et conservent les secrets administrateur, VPS et WhatsApp :
+
+```bash
+sudo sed -i 's/^NOC_VIEW_TOKEN=.*/NOC_VIEW_TOKEN=/' /etc/noc-dashboard.env
+sudo systemctl restart noc-dashboard.service
+```
+
+Rechargez ensuite le navigateur avec **Ctrl+F5** pour cette ancienne installation. Dans la version actuelle, `NOC_VIEW_TOKEN` est ignoré, même si sa valeur reste non vide.
+
+Pour installer la version actuelle avec WhatsApp vocal et Sentinel, suivez la [mise à jour complète dans MODULES.md](MODULES.md#1-mettre-à-jour-le-dell). Transférez le projet complet puis exécutez `sudo bash install.sh` : les nouveaux modules Python, la dépendance cryptographique, l'unité et la règle sudoers doivent être installés ensemble. L'installateur sauvegarde les fichiers remplacés et conserve la configuration existante. Le venv vocal et le modèle tiny se préparent séparément avec `sudo bash install-voice.sh`.
 
 ## Tests API après installation
 
-Ces commandes utilisent les valeurs réelles de la configuration sans afficher les jetons ni les mettre dans les arguments de `curl`. Les exemples supposent le bind initial `127.0.0.1:5050` et `NOC_COOKIE_SECURE=false`.
+Les exemples supposent le bind initial `127.0.0.1:5050`. Les mesures et le flux SSE se consultent sans authentification ; les rapports VPS utilisent le jeton réel chargé depuis la configuration par systemd.
 
 ```bash
-umask 077
-NOC_VIEW_TOKEN="$(sudo sed -n 's/^NOC_VIEW_TOKEN=//p' /etc/noc-dashboard.env)"
-NOC_ADMIN_TOKEN="$(sudo sed -n 's/^NOC_ADMIN_TOKEN=//p' /etc/noc-dashboard.env)"
-NOC_COOKIE_FILE="$(mktemp)"
-
 # Santé publique.
 curl --fail --silent --show-error http://127.0.0.1:5050/api/health
 
-# Authentification, cookie privé.
-printf '{"token":"%s"}' "$NOC_VIEW_TOKEN" |
-  curl --fail --silent --show-error --cookie-jar "$NOC_COOKIE_FILE" \
-    --header 'Content-Type: application/json' --data-binary @- \
-    http://127.0.0.1:5050/api/login
-
 # Snapshot complet.
-curl --fail --silent --show-error --cookie "$NOC_COOKIE_FILE" \
+curl --fail --silent --show-error \
   http://127.0.0.1:5050/api/snapshot | python3.11 -m json.tool
 
 # Plusieurs événements en sept secondes ; curl termine normalement avec le code 28.
-curl --silent --show-error --no-buffer --max-time 7 --cookie "$NOC_COOKIE_FILE" \
+curl --silent --show-error --no-buffer --max-time 7 \
   http://127.0.0.1:5050/api/stream || test "$?" -eq 28
 
 # Rapport VPS réel depuis le Dell ; utilise /proc et le système de fichiers.
@@ -106,11 +106,9 @@ sudo systemd-run --quiet --wait --pipe --collect --unit=noc-local-agent-check \
   /opt/noc-dashboard/venv/bin/python /opt/noc-dashboard/vps_agent.py --once
 
 # Le nouveau rapport apparaît dans le snapshot et le flux SSE.
-curl --fail --silent --show-error --cookie "$NOC_COOKIE_FILE" \
+curl --fail --silent --show-error \
   http://127.0.0.1:5050/api/snapshot | python3.11 -m json.tool
 
-rm -f -- "$NOC_COOKIE_FILE"
-unset NOC_COOKIE_FILE NOC_VIEW_TOKEN NOC_ADMIN_TOKEN
 ```
 
 Vérification du refus d'un rapport non authentifié :
@@ -217,14 +215,13 @@ Le backend et le frontend fonctionnent aussi dans ce dossier pour vérification.
 Set-Location 'C:\Users\hp\Desktop\MONOTORING WEB\noc-dashboard'
 py -3.11 -m venv venv
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
-$env:NOC_VIEW_TOKEN = & .\venv\Scripts\python.exe -c 'import secrets; print(secrets.token_hex(32))'
 $env:NOC_GATEWAY_SECRET = Read-Host 'Secret de la passerelle WhatsApp locale'
 $env:NOC_HOST = '127.0.0.1'
 $env:NOC_PORT = '5050'
 .\venv\Scripts\python.exe main.py
 ```
 
-Ouvrez http://127.0.0.1:5050. Dans le terminal où la variable a été créée, lisez `$env:NOC_VIEW_TOKEN` pour vous connecter. En l'absence de services et de passerelle sur ce PC, les sondes montrent leur indisponibilité ; aucune donnée de production n'est simulée. Le bind est local et les redémarrages restent désactivés.
+Ouvrez http://127.0.0.1:5050 : le tableau s'affiche directement. En l'absence de services et de passerelle sur ce PC, les sondes montrent leur indisponibilité ; aucune donnée de production n'est simulée. Le bind est local et les redémarrages restent désactivés.
 
 La suite de tests utilise `unittest` de la bibliothèque standard, sans paquet de test supplémentaire. Depuis le dossier source sur Linux, préparez un environnement de test séparé de l'installation puis exécutez-la :
 
@@ -247,18 +244,9 @@ L'objectif est un fonctionnement léger, avec collecte mutualisée, historique l
 
 ```bash
 sudo systemctl show noc-dashboard.service -p MemoryCurrent -p TasksCurrent -p MainPID
-NOC_VIEW_TOKEN="$(sudo sed -n 's/^NOC_VIEW_TOKEN=//p' /etc/noc-dashboard.env)"
-NOC_COOKIE_FILE="$(mktemp)"
-chmod 0600 "$NOC_COOKIE_FILE"
-printf '{"token":"%s"}' "$NOC_VIEW_TOKEN" |
-  curl --fail --silent --show-error --cookie-jar "$NOC_COOKIE_FILE" \
-    --header 'Content-Type: application/json' --data-binary @- \
-    http://127.0.0.1:5050/api/login
-curl --fail --silent --show-error --cookie "$NOC_COOKIE_FILE" \
+curl --fail --silent --show-error \
   http://127.0.0.1:5050/api/snapshot |
   python3.11 -c 'import json,sys; d=json.load(sys.stdin); print("RSS du backend : %.2f MiB" % (d["hardware"]["process_rss_bytes"]/1024**2))'
-rm -f -- "$NOC_COOKIE_FILE"
-unset NOC_COOKIE_FILE NOC_VIEW_TOKEN
 ```
 
 `MemoryCurrent` concerne le groupe du service ; le RSS du snapshot concerne le processus Python. Mesurez après plusieurs minutes, puis avec les onglets et VPS habituels.
@@ -271,6 +259,10 @@ sudo -l -U noc-dashboard
 sudo systemctl is-active merca-market.service klasora.service babamarket.service moc-mal.service cloudflared.service klasora-whatsapp.service
 ```
 
-Une erreur `401` exige le jeton correspondant à la route. Un restart refusé demande la vérification de `NOC_ENABLE_RESTART`, du jeton administrateur et de la règle sudoers. Une température absente indique généralement qu'aucun capteur exploitable n'est exposé à psutil. Le chemin de sauvegarde absent ou non monté est explicitement indisponible, avec des métriques nulles ; aucune capacité de sauvegarde n'est déduite du disque racine.
+Une erreur `401` sur un rapport VPS ou une action de redémarrage exige le jeton correspondant à cette route. Un restart refusé demande la vérification de `NOC_ENABLE_RESTART`, du jeton administrateur et de la règle sudoers. Une température absente indique généralement qu'aucun capteur exploitable n'est exposé à psutil. Le chemin de sauvegarde absent ou non monté est explicitement indisponible, avec des métriques nulles ; aucune capacité de sauvegarde n'est déduite du disque racine.
 
-Le frontend est autonome : CSS, icônes SVG et graphiques sont intégrés au HTML, sans dépendance CDN ni compilation. Les accès réseau aux applications du Dell restent limités à loopback. Si vous choisissez d'exposer le dashboard, utilisez HTTPS et gardez les jetons activés ; l'installation initiale reste accessible uniquement localement ou via tunnel.
+Le frontend est autonome : CSS, icônes SVG et graphiques sont intégrés au HTML, sans dépendance CDN ni compilation. Les accès réseau aux applications du Dell restent limités à loopback. L'installation initiale reste accessible uniquement localement ou via tunnel ; les jetons administrateur et VPS protègent toujours les écritures.
+
+## Modules WhatsApp vocal et Sentinel
+
+Cette version ajoute les commandes WhatsApp texte/vocales et le radar Sentinel VPS en direct. Suivez [MODULES.md](MODULES.md) pour la mise à jour du Dell, le modèle vocal local, la sauvegarde BabaMarket et l'installation du service `sentinel-vps.service` sur le VPS. La mise à jour de ces modules nécessite le projet complet et ses nouvelles dépendances : l'ancienne procédure limitée à trois fichiers ne suffit pas.
