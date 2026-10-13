@@ -15,13 +15,218 @@
     .section-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;gap:15px}.section-heading h2{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#b6c5d9;display:flex;align-items:center;gap:9px}.section-heading h2 .icon{width:15px;height:15px;color:var(--muted)}.section-heading .meta{font-size:10px;color:#728198;font-family:var(--mono)}section{scroll-margin-top:25px}.hardware-grid{display:grid;grid-template-columns:1.85fr 1.17fr .9fr 1.28fr;gap:15px;margin-bottom:29px}.card{border:1px solid var(--line);border-radius:11px;background:linear-gradient(140deg,#131b29 0%,#101722 90%);min-width:0}.metric-card{padding:18px 19px;min-height:205px}.card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:19px}.card-label{font-size:11px;color:#a0b1c9;font-weight:600;display:flex;align-items:center;gap:8px}.card-label .icon{width:15px;height:15px;color:#71829b}.card-top .meta{font-size:9px;color:#75859c}.cpu-body{display:flex;gap:17px;align-items:center}.gauge{width:102px;height:102px;flex-shrink:0;border-radius:50%;display:grid;place-items:center;background:conic-gradient(from 225deg,var(--gauge-color,var(--cyan)) calc(var(--progress,0)*.75%),#273245 0 75%,transparent 0);position:relative}.gauge:before{content:"";position:absolute;inset:8px;border-radius:50%;background:#131c29}.gauge-content{position:relative;display:flex;flex-direction:column;align-items:center;margin-top:5px}.gauge-number{font-family:var(--mono);font-size:28px;line-height:1.2;letter-spacing:-1.5px}.gauge-number small{font-size:13px;letter-spacing:0;color:var(--muted);margin-left:3px}.gauge-caption{font-size:8px;letter-spacing:.1em;color:var(--muted);margin-top:5px;text-transform:uppercase}.cpu-trend{flex:1;min-width:0}.chart-caption{display:flex;justify-content:space-between;font-size:8px;color:var(--muted);gap:5px;margin-bottom:5px}.trend-svg{width:100%;height:66px;overflow:visible}.chart-grid{stroke:#263349;stroke-width:.6;stroke-dasharray:2 3}.chart-line{stroke:var(--cyan);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.chart-area{fill:url(#cpu-fill)}.chart-end{fill:var(--cyan)}.core-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px;margin-top:14px;max-height:75px;overflow-y:auto;scrollbar-width:thin}.core-item{min-width:0}.core-label{font:8px var(--mono);display:flex;justify-content:space-between;gap:3px;color:#7f91aa;margin-bottom:4px}.core-track{height:3px;background:#253044;border-radius:3px;overflow:hidden}.core-fill{height:100%;background:var(--cyan);border-radius:3px;transition:width .4s}.no-data{font-size:10px;color:var(--muted);line-height:1.7}.memory-body{display:flex;align-items:center;gap:17px}.memory-body .gauge{width:86px;height:86px;--gauge-color:var(--green)}.memory-body .gauge-number{font-size:25px}.memory-values{min-width:0}.primary-value{font-family:var(--mono);font-size:19px;letter-spacing:-.8px;white-space:nowrap}.secondary-value{font-size:10px;color:var(--muted);margin-top:7px}.swap-row{border-top:1px solid #253044;margin-top:17px;padding-top:11px}.detail-line{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:9px;color:var(--muted)}.detail-line .value{color:#acbdd3;font-family:var(--mono);font-size:9px}.progress-track{height:4px;background:#263145;border-radius:4px;overflow:hidden;margin-top:8px}.progress-fill{height:100%;background:var(--cyan);transition:width .4s;border-radius:4px;width:0}.swap-row .progress-fill{background:var(--green)}.temperature-value{font:38px var(--mono);letter-spacing:-2px;margin-top:22px}.temperature-value small{font:15px var(--mono);color:var(--muted);letter-spacing:0;margin-left:5px}.thermal-label{font-size:10px;color:var(--muted);margin-top:7px}.temperature-meter{display:flex;gap:3px;margin-top:20px;height:6px}.temperature-meter span{flex:1;border-radius:2px;background:#263246}.temperature-meter span.lit{background:var(--cyan)}.temperature-meter[data-tone="warning"] span.lit{background:var(--amber)}.temperature-meter[data-tone="error"] span.lit{background:var(--red)}.disk-row+.disk-row{margin-top:20px}.disk-label{display:flex;align-items:center;gap:7px;font:10px var(--mono);color:#becce0}.disk-label .icon{width:13px;height:13px;color:#8293ab}.disk-data{font:10px var(--mono);color:#cad6e8;margin-top:8px;display:flex;justify-content:space-between;gap:8px}.disk-data .muted{font-size:9px}.disk-sub{font-size:8px;color:#6f829c;margin-top:6px;overflow-wrap:anywhere}.disk-row.backup .progress-fill{background:#9d96eb}
     .services-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;margin-bottom:29px}.service-card{padding:18px 19px 14px;border-top:2px solid #2b3a4d;position:relative;overflow:hidden}.service-card[data-tone="success"]{border-top-color:#408d78}.service-card[data-tone="error"]{border-top-color:#a24c62}.service-card[data-tone="success"]:after{content:"";position:absolute;inset:0 0 auto auto;width:100px;height:85px;background:radial-gradient(at 100% 0%,#47e4ac09,transparent 75%);pointer-events:none}.service-header{display:flex;justify-content:space-between;align-items:center;gap:10px}.service-logo{width:34px;height:34px;display:grid;place-items:center;background:#1b283b;border:1px solid #30405a;border-radius:8px;color:#9aafce;font-size:10px;font-weight:700;font-family:var(--mono)}.service-name{font-size:13px;font-weight:600;margin-top:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.service-port{font:9px var(--mono);color:#8394ad;margin-top:6px}.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid #334155;border-radius:4px;color:#9baac0;font:8px var(--mono);text-transform:uppercase;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}.badge .led{width:4px;height:4px;box-shadow:none}.badge[data-tone="success"]{color:var(--green);background:#17342a55;border-color:#2e5446}.badge[data-tone="error"]{color:var(--red);background:#391e2955;border-color:#573342}.badge[data-tone="warning"]{color:var(--amber);background:#33291755;border-color:#54452b}.service-measure{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;margin:18px 0 16px}.service-measure-label{font-size:9px;color:var(--muted);margin-bottom:5px}.latency{font:23px var(--mono);letter-spacing:-.6px}.latency small{font-size:10px;color:#7a8ca7;letter-spacing:0;margin-left:4px}.http-status{font:9px var(--mono);color:#9bacbf;margin-bottom:3px}.service-footer{display:flex;justify-content:space-between;align-items:center;gap:5px;border-top:1px solid #263044;padding-top:12px}.service-systemd{font:8px var(--mono);color:#7f92ad;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%}.restart-button{display:flex;align-items:center;gap:5px;border:0;padding:3px 0;background:none;font-size:9px;color:#9dafc7}.restart-button .icon{width:12px;height:12px}.restart-button:not(:disabled):hover{color:var(--cyan)}.service-error{color:var(--red);font-size:9px;line-height:1.5;margin-top:10px;overflow-wrap:anywhere}
     .bottom-grid{display:grid;grid-template-columns:1.12fr 1fr;gap:21px}.network-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:20px}.network-card{padding:17px 18px}.network-top{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:14px}.network-icon{width:31px;height:31px;border-radius:8px;background:#152a38;border:1px solid #294656;color:var(--cyan);display:grid;place-items:center}.network-icon.whatsapp{background:#142c25;border-color:#2a473a;color:var(--green)}.network-icon .icon{width:17px;height:17px}.network-name{font-size:12px;font-weight:550}.network-meta{font:9px var(--mono);color:var(--muted);margin-top:7px;overflow-wrap:anywhere}.network-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:13px;color:#73859e;font-size:9px}.network-footer strong{font:9px var(--mono);color:#aebed4;font-weight:400}.network-error{font-size:9px;color:var(--red);line-height:1.5;margin-top:9px;overflow-wrap:anywhere}.vps-panel{overflow:hidden;min-height:151px}.vps-empty{display:flex;gap:13px;align-items:center;padding:24px;color:var(--muted)}.vps-empty-icon{height:40px;width:40px;border:1px dashed #354359;border-radius:10px;display:grid;place-items:center;flex-shrink:0}.vps-empty strong{font-size:11px;color:#9bb0cd;font-weight:500}.vps-empty p{font-size:10px;margin-top:6px;line-height:1.7}.vps-item{padding:15px 18px}.vps-item+.vps-item{border-top:1px solid var(--line)}.vps-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}.vps-host{font:11px var(--mono);overflow-wrap:anywhere}.vps-meta{font:8px var(--mono);color:var(--muted)}.vps-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.vps-stat .detail-line{font-size:8px}.vps-stat .detail-line .value{font-size:9px}.vps-services{margin-top:10px;display:flex;flex-wrap:wrap;gap:5px}.vps-services .badge{font-size:8px;max-width:none}.vps-age{font:8px var(--mono);color:#7486a0;margin-top:10px}.terminal-card{height:341px;display:flex;flex-direction:column;background:#0e1521;overflow:hidden}.terminal-header{display:flex;justify-content:space-between;align-items:center;padding:13px 17px;border-bottom:1px solid #243046;background:#121c2b}.terminal-dots{display:flex;gap:5px}.terminal-dots span{width:6px;height:6px;border-radius:50%;background:#3b4b64}.terminal-dots span:first-child{background:#95706b}.terminal-dots span:nth-child(2){background:#95855e}.terminal-dots span:nth-child(3){background:#628b7b}.terminal-name{font:9px var(--mono);color:#93a5bf}.console-controls{display:flex;align-items:center;gap:10px}.console-button{font-size:9px;color:#8194af;background:none;border:0;padding:2px}.console-button:hover{color:var(--cyan)}.events-list{overflow:auto;flex:1;padding:11px 17px 14px;scrollbar-width:thin;scrollbar-color:#2b3c54 transparent;display:flex;flex-direction:column;gap:10px}.console-empty{margin:auto 0;color:#627590;font:10px var(--mono);line-height:1.9}.event-line{font:9px/1.7 var(--mono);display:grid;grid-template-columns:52px 48px 1fr;gap:8px;color:#adbcd0;overflow-wrap:anywhere}.event-time{color:#5d7391}.event-level{color:var(--cyan);font-size:8px}.event-line[data-level="warning"] .event-level{color:var(--amber)}.event-line[data-level="error"] .event-level{color:var(--red)}.terminal-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 17px;border-top:1px solid #223048;color:#5f7796;font:8px var(--mono)}.terminal-cursor{width:5px;height:9px;background:#68bdd3;display:inline-block;margin-left:5px;vertical-align:middle;animation:cursor 1.2s steps(2) infinite}@keyframes cursor{50%{opacity:0}}footer{margin-top:26px;padding-top:15px;border-top:1px solid #1e2a3a;display:flex;justify-content:space-between;gap:12px;color:#5f718a;font:8px var(--mono);letter-spacing:.02em}.footer-left{display:flex;gap:15px;align-items:center}.footer-status{display:flex;align-items:center;gap:6px}.footer-status .led{width:4px;height:4px;box-shadow:none;color:#64788e}.footer-status[data-tone="success"] .led{color:var(--green)}
-    dialog{border:1px solid #36506a;border-radius:14px;background:#121b2a;color:var(--text);padding:30px;width:min(430px,calc(100% - 32px));box-shadow:0 30px 100px #0008}dialog::backdrop{background:#060a13ce;backdrop-filter:blur(7px)}.dialog-icon{width:43px;height:43px;background:#17313d;border:1px solid #2b5364;display:grid;place-items:center;color:var(--cyan);border-radius:10px;margin-bottom:19px}dialog h2{font-size:21px;font-weight:600;letter-spacing:-.4px}dialog p{font-size:12px;color:#8c9eb9;line-height:1.8;margin-top:10px}.dialog-label{display:block;font-size:10px;font-weight:600;color:#bdcde1;margin:23px 0 9px}dialog input{width:100%;background:#0b1320;border:1px solid #35445c;border-radius:7px;padding:12px 13px;color:var(--text);font-family:var(--mono);font-size:12px}dialog input:focus{border-color:var(--cyan)}.dialog-error{font-size:11px;color:var(--red);margin-top:12px;line-height:1.6;min-height:0}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:23px}.button{border:1px solid #32445f;padding:11px 16px;font-size:11px;border-radius:7px;background:#182439}.button:hover{background:#203149}.button.primary{color:#06171d;background:var(--cyan);border-color:var(--cyan);font-weight:650}.button.primary:hover{background:#7ee5f4}.button.danger{color:#1a0911;background:#ff8397;border-color:#ff8397}.login-note{font-size:9px!important;margin-top:18px!important;color:#687e9b!important}.toast{position:fixed;right:25px;bottom:24px;background:#172838;border:1px solid #36546b;box-shadow:0 8px 40px #0006;padding:14px 18px;border-radius:9px;max-width:min(440px,calc(100% - 32px));font-size:12px;line-height:1.5;z-index:30}.toast[data-tone="error"]{border-color:#783b4d;color:var(--red)}.toast[data-tone="success"]{border-color:#386451;color:var(--green)}
+    dialog{border:1px solid #36506a;border-radius:14px;background:#121b2a;color:var(--text);padding:30px;width:min(430px,calc(100% - 32px));box-shadow:0 30px 100px #0008}dialog::backdrop{background:#060a13ce;backdrop-filter:blur(7px)}.dialog-icon{width:43px;height:43px;background:#17313d;border:1px solid #2b5364;display:grid;place-items:center;color:var(--cyan);border-radius:10px;margin-bottom:19px}dialog h2{font-size:21px;font-weight:600;letter-spacing:-.4px}dialog p{font-size:12px;color:#8c9eb9;line-height:1.8;margin-top:10px}.dialog-label{display:block;font-size:10px;font-weight:600;color:#bdcde1;margin:23px 0 9px}dialog input{width:100%;background:#0b1320;border:1px solid #35445c;border-radius:7px;padding:12px 13px;color:var(--text);font-family:var(--mono);font-size:12px}dialog input:focus{border-color:var(--cyan)}.dialog-error{font-size:11px;color:var(--red);margin-top:12px;line-height:1.6;min-height:0}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:23px}.button{border:1px solid #32445f;padding:11px 16px;font-size:11px;border-radius:7px;background:#182439}.button:hover{background:#203149}.button.primary{color:#06171d;background:var(--cyan);border-color:var(--cyan);font-weight:650}.button.primary:hover{background:#7ee5f4}.button.danger{color:#1a0911;background:#ff8397;border-color:#ff8397}.toast{position:fixed;right:25px;bottom:24px;background:#172838;border:1px solid #36546b;box-shadow:0 8px 40px #0006;padding:14px 18px;border-radius:9px;max-width:min(440px,calc(100% - 32px));font-size:12px;line-height:1.5;z-index:30}.toast[data-tone="error"]{border-color:#783b4d;color:var(--red)}.toast[data-tone="success"]{border-color:#386451;color:var(--green)}
     @media(min-width:1700px){.metric-card{min-height:222px}.cpu-body{gap:25px}.gauge{width:112px;height:112px}.trend-svg{height:76px}.terminal-card{height:365px}.service-card{padding:22px}}
     @media(max-width:1250px){.topbar{padding:0 25px}main{padding:26px 25px 20px}.hardware-grid{grid-template-columns:1.5fr 1.1fr;gap:13px}.metric-card{min-height:192px}.temperature-card .temperature-value{margin-top:0}.temperature-card .temperature-meter{max-width:250px}.disk-card{display:grid;grid-template-columns:1fr 1fr;gap:20px}.disk-card .card-top{grid-column:1/-1;margin-bottom:0}.disk-row+.disk-row{margin-top:0}.services-grid{gap:12px}.service-card{padding:16px 14px}.network-card{padding:14px}.bottom-grid{grid-template-columns:1.05fr 1fr;gap:16px}.topbar-right{gap:18px}.host-platform{display:none}.status-chip{font-size:9px}}
     @media(max-width:960px){.bottom-grid{grid-template-columns:1fr}.terminal-card{height:285px}.services-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.network-grid{grid-template-columns:1fr 1fr}.topbar{height:77px}.clock{font-size:13px}.host-name{max-width:190px;font-size:13px}.status-chip{max-width:175px;font-size:8px;line-height:1.5}.page-heading{margin-bottom:24px}h1{font-size:27px}.subtitle{font-size:11px}.telemetry-info{font-size:9px}.hardware-grid{margin-bottom:24px}}
     @media(max-width:640px){.rail{width:55px}.brand{width:33px;height:33px;margin:22px 0 30px;border-radius:9px}.brand .icon{width:20px;height:20px}.nav-link,.rail-bottom{width:35px;height:38px}.nav-link.active:before{left:-10px}.tooltip{left:41px}.rail nav{gap:13px}.shell{margin-left:55px}.topbar{padding:0 15px;height:76px;gap:9px}.host-icon{display:none}.host-name{max-width:130px;font-size:11px}.host-block .eyebrow{font-size:8px}.topbar-right{gap:10px}.clock{font-size:11px}.clock-date{font-size:8px}.status-chip{display:none}main{padding:23px 15px 17px}.page-heading{align-items:start;margin-bottom:24px;gap:10px}h1{font-size:24px}.heading-kicker{font-size:8px}.subtitle{font-size:10px;line-height:1.7;max-width:200px}.telemetry-info{font-size:8px;max-width:100px;padding-top:2px}.stream-label{font-size:8px}.hardware-grid{grid-template-columns:1fr}.metric-card{min-height:0;padding:17px}.cpu-card{min-height:196px}.memory-body .gauge{width:82px;height:82px}.memory-card .memory-body{gap:26px}.memory-card .primary-value{font-size:25px}.memory-card .card-top{margin-bottom:13px}.temperature-card{display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:12px}.temperature-card .card-top{grid-column:1/-1;margin-bottom:13px}.temperature-card .temperature-value{grid-column:2;grid-row:2;font-size:32px}.temperature-card .thermal-label{grid-column:1;grid-row:2;margin-top:0}.temperature-card .temperature-meter{grid-column:1/-1;margin-top:15px}.disk-card{gap:15px}.disk-card .card-top{margin-bottom:4px}.services-grid{gap:10px}.service-card{padding:14px 12px 12px}.service-name{font-size:11px;margin-top:12px}.service-logo{width:29px;height:29px;font-size:8px}.badge{font-size:7px;gap:4px;padding:4px;max-width:80px}.latency{font-size:20px}.service-port{font-size:8px}.service-systemd{font-size:7px;max-width:58%}.restart-button{font-size:8px;gap:3px}.http-status{font-size:8px}.service-measure{gap:5px}.service-measure-label{font-size:8px}.section-heading h2{font-size:9px;letter-spacing:.08em;gap:6px}.section-heading .meta{font-size:8px}.section-heading h2 .icon{width:13px;height:13px}.network-grid{grid-template-columns:1fr}.network-card{padding:16px}.network-top{margin-bottom:12px}.network-card .badge{font-size:8px;max-width:130px}.vps-empty{padding:20px 16px;gap:10px}.vps-empty p{font-size:9px}.vps-host{font-size:10px}.vps-row .badge{max-width:100px}.vps-item{padding:14px}.vps-stats{gap:9px}.events-list{padding:12px}.event-line{grid-template-columns:45px 39px 1fr;gap:6px;font-size:8px}.event-level{font-size:7px}.terminal-header{padding:12px}.terminal-name{font-size:8px}.terminal-footer{padding:9px 12px;font-size:7px}.terminal-card{height:300px}.footer-left{gap:9px}footer{font-size:7px;flex-wrap:wrap;line-height:1.8}.connection-banner{font-size:10px;line-height:1.7}.console-button{font-size:8px}}
     @media(max-width:640px){.topbar{height:102px;position:relative;align-items:flex-start;padding-top:18px}.topbar .status-chip{display:flex;position:absolute;left:15px;right:15px;bottom:11px;max-width:none;justify-content:center;padding:5px 8px;font-size:8px;line-height:1.3}}
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+    /* Vue de supervision : l'espace est consacré aux mesures. */
+    .rail{width:64px}
+    .brand{margin:18px 0 28px;width:38px;height:38px}
+    .rail nav{gap:10px}
+    .nav-link.active:before{left:-11px}
+    .shell{margin-left:64px}
+    .topbar{height:60px;padding:0 24px}
+    .host-icon{width:34px;height:34px}
+    .host-name{font-size:14px;margin-top:4px}
+    .topbar-right{gap:18px}
+    .status-chip{padding:8px 10px}
+    main{max-width:none;padding:14px 24px 12px}
+    .page-heading{align-items:center;gap:14px;margin-bottom:13px;min-height:24px}
+    .page-heading h1{font-size:15px;font-weight:600;letter-spacing:-.2px;color:#adbed3}
+    .telemetry-info{display:flex;align-items:center;gap:16px;line-height:1.4}
+    .telemetry-info>div+div{border-left:1px solid var(--line);padding-left:16px}
+    .connection-banner{margin-bottom:12px;padding:9px 12px}
+    .section-heading{margin-bottom:9px;min-height:16px}
+    .section-heading h2{font-size:11px;letter-spacing:.08em}
+    .hardware-grid{grid-template-columns:1.65fr 1.14fr .84fr 1.18fr;gap:14px;margin-bottom:18px}
+    .metric-card{padding:14px 16px;min-height:180px}
+    .card-top{margin-bottom:10px}
+    .cpu-body{gap:15px}
+    .gauge{width:86px;height:86px}
+    .gauge:before{inset:7px}
+    .gauge-number{font-size:26px}
+    .memory-body{gap:13px}
+    .memory-body .gauge{width:80px;height:80px}
+    .trend-svg{height:52px}
+    .core-grid{margin-top:9px;gap:5px 10px;max-height:58px}
+    .swap-row{margin-top:11px;padding-top:10px}
+    .temperature-value{margin-top:6px;font-size:34px}
+    .temperature-meter{margin-top:16px;max-width:none}
+    .disk-card{display:block}
+    .disk-row+.disk-row{margin-top:12px}
+    .disk-data{margin-top:6px}
+    .disk-sub{margin-top:5px}
+    .disk-row .progress-track{margin-top:6px}
+    .services-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+    .service-card{padding:14px 16px 12px}
+    .service-header{gap:10px;min-height:34px}
+    .service-logo{width:30px;height:30px;flex-shrink:0}
+    .service-identity{min-width:0;flex:1}
+    .service-name{margin-top:0;font-size:13px}
+    .service-port{margin-top:5px}
+    .service-header .service-badge{flex-shrink:0}
+    .service-measure{margin:13px 0 11px}
+    .service-measure-label{margin-bottom:4px}
+    .latency{font-size:24px}
+    .service-footer{padding-top:9px}
+    .restart-button{min-height:24px}
+    .service-error{margin-top:7px;max-height:40px;overflow:auto}
+    .bottom-grid{grid-template-columns:1.2fr .88fr 1.35fr;gap:16px;align-items:start}
+    .bottom-grid section{min-width:0}
+    #infrastructure .section-heading .meta{display:none}
+    .network-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:0}
+    .network-card{padding:13px 14px;min-height:142px}
+    .network-top{margin-bottom:10px;gap:6px}
+    .network-icon{width:26px;height:26px}
+    .network-name{font-size:12px;line-height:1.4}
+    .network-meta{margin-top:6px}
+    .network-footer{margin-top:11px}
+    .network-error{margin-top:7px;max-height:38px;overflow:auto}
+    .vps-panel{min-height:0;max-height:164px;overflow:auto;scrollbar-width:thin;scrollbar-color:#2b3c54 transparent}
+    .vps-empty{padding:19px 16px;align-items:flex-start;min-height:108px}
+    .vps-empty-icon{width:30px;height:30px}
+    .vps-empty p{line-height:1.6}
+    .vps-item{padding:12px 14px}
+    .vps-row{margin-bottom:10px}
+    .terminal-card{height:164px}
+    .terminal-header{padding:10px 14px}
+    .events-list{min-height:0;padding:9px 14px;gap:7px}
+    .event-line{font-size:10px;grid-template-columns:52px 38px 1fr;gap:7px;line-height:1.6}
+    .terminal-footer{padding:7px 14px}
+    footer{margin-top:15px;padding-top:10px}
+    @media(max-width:1300px){
+      .hardware-grid{grid-template-columns:1.5fr 1.15fr .8fr 1.15fr}
+      .metric-card{padding:13px 14px}
+      .cpu-body{gap:10px}
+      .gauge{width:80px;height:80px}
+      .memory-body{gap:10px}
+      .memory-body .gauge{width:72px;height:72px}
+      .primary-value{font-size:17px}
+      .bottom-grid{grid-template-columns:1.2fr .85fr 1.2fr;gap:12px}
+      .service-card{padding:13px 14px 11px}
+      .service-logo{display:none}
+      .network-grid{grid-template-columns:1fr}
+      .network-card{display:grid;grid-template-columns:1fr auto;column-gap:10px;padding:11px 13px;min-height:0}
+      .network-top{grid-column:2;grid-row:1/3;margin:0;align-self:center}
+      .network-top .network-icon{display:none}
+      .network-name{grid-column:1;grid-row:1}
+      .network-meta{grid-column:1;grid-row:2;font-size:9px;margin-top:4px}
+      .network-footer{grid-column:1/-1;margin-top:8px}
+      .network-error{grid-column:1/-1}
+    }
+    @media(min-width:1121px) and (max-height:800px){
+      .topbar{height:56px}
+      main{padding-top:10px;padding-bottom:10px}
+      .page-heading{margin-bottom:10px}
+      .hardware-grid,.services-grid{margin-bottom:13px}
+      .metric-card{padding-top:12px;padding-bottom:12px;min-height:170px}
+      .gauge{width:80px;height:80px}
+      .memory-body .gauge{width:74px;height:74px}
+      .service-card{padding-top:12px;padding-bottom:10px}
+      .service-measure{margin:10px 0 9px}
+      .network-card{min-height:134px}
+      .terminal-card{height:146px}
+      .vps-panel{max-height:146px}
+      footer{margin-top:11px;padding-top:8px}
+    }
+    @media(min-width:1121px) and (max-width:1300px) and (max-height:800px){
+      .network-card{min-height:0}
+    }
+    @media(max-width:1120px){
+      .topbar{padding:0 20px}
+      main{padding:14px 20px}
+      .hardware-grid{grid-template-columns:1.3fr 1fr}
+      .metric-card{min-height:176px}
+      .temperature-card{min-height:148px}
+      .disk-card{display:grid;grid-template-columns:1fr 1fr;gap:14px;min-height:148px}
+      .disk-card .card-top{grid-column:1/-1;margin-bottom:0}
+      .disk-row+.disk-row{margin-top:0}
+      .service-header{flex-wrap:wrap}
+      .service-header .service-badge{margin-left:auto}
+      .bottom-grid{grid-template-columns:1.2fr 1fr}
+      #events{grid-column:1/-1}
+      .network-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .network-card{display:block;min-height:140px}
+      .network-top{display:flex;margin-bottom:10px}
+      .network-top .network-icon{display:grid}
+      .terminal-card{height:172px}
+      .vps-panel{max-height:172px}
+    }
+    @media(max-width:760px){
+      .services-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .service-header{flex-wrap:nowrap}
+      .topbar-right{gap:12px}
+      .status-chip{font-size:8px;max-width:195px}
+      .host-name{max-width:180px}
+      .telemetry-info{gap:10px}
+      .telemetry-info>div+div{padding-left:10px}
+      .collection-interval{display:none}
+      .bottom-grid{grid-template-columns:1fr}
+      #events{grid-column:auto}
+      .network-card{min-height:130px}
+      .vps-empty{min-height:0}
+      .vps-panel{max-height:210px}
+    }
+    @media(max-width:640px){
+      .rail{width:54px}
+      .shell{margin-left:54px}
+      .brand{width:32px;height:32px;margin-top:18px;margin-bottom:24px}
+      .rail .nav-link,.rail-bottom{width:36px;height:36px}
+      .nav-link.active:before{left:-9px}
+      .topbar{height:92px;padding:13px 14px 0;align-items:flex-start}
+      .host-icon{display:none}
+      .host-name{font-size:12px;max-width:160px}
+      .clock{font-size:12px}
+      .clock-date{font-size:8px}
+      .topbar .status-chip{left:14px;right:14px;bottom:11px;padding:5px 8px;max-width:none}
+      main{padding:12px 14px}
+      .page-heading{flex-wrap:wrap;gap:8px;margin-bottom:15px}
+      .page-heading h1{font-size:14px}
+      .telemetry-info{font-size:9px;width:100%;max-width:none;justify-content:space-between}
+      .telemetry-info>div+div{border-left:0;padding-left:0}
+      .stream-label{font-size:9px;white-space:nowrap}
+      .hardware-grid{grid-template-columns:1fr;gap:12px}
+      .metric-card{padding:15px 16px;min-height:0}
+      .cpu-card{min-height:181px}
+      .gauge{width:86px;height:86px}
+      .memory-body .gauge{width:80px;height:80px}
+      .temperature-card{display:grid;grid-template-columns:1fr auto;gap:8px 12px}
+      .temperature-card .card-top{grid-column:1/-1;margin-bottom:0}
+      .temperature-value{grid-column:2;grid-row:2/4;margin:0;font-size:30px}
+      .thermal-label{grid-column:1;grid-row:2;margin-top:4px}
+      .temperature-meter{grid-column:1/-1;margin-top:5px}
+      .disk-card{display:block}
+      .disk-card .card-top{margin-bottom:12px}
+      .disk-row+.disk-row{margin-top:14px}
+      .services-grid{gap:10px}
+      .service-card{padding:12px 11px}
+      .service-header{display:block}
+      .service-name{font-size:12px}
+      .service-port{font-size:8px}
+      .service-header .service-badge{margin-top:9px}
+      .latency{font-size:21px}
+      .service-footer{flex-wrap:wrap;gap:6px}
+      .service-systemd{max-width:none;font-size:8px}
+      .restart-button{font-size:10px}
+      .http-status{font-size:8px}
+      .network-grid{gap:10px}
+      .network-card{padding:12px}
+      .network-name{font-size:11px}
+      .network-top{gap:5px}
+      .network-top .network-icon{width:23px;height:23px}
+      .network-meta{font-size:8px}
+      .network-footer{font-size:8px;flex-wrap:wrap;gap:4px}
+      .network-footer strong{font-size:8px}
+      .section-heading h2{font-size:10px}
+      .section-heading .meta{font-size:9px}
+      .event-line{font-size:9px;grid-template-columns:46px 34px 1fr;gap:5px}
+      .terminal-card{height:190px}
+      footer{font-size:8px;flex-wrap:wrap;gap:8px}
+    }
   </style>
 </head>
 <body>
@@ -34,7 +239,7 @@
       <a class="nav-link" href="#infrastructure" aria-label="Infrastructure et réseau"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="5" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/><rect x="15" y="16" width="7" height="5" rx="1"/><path d="M12 8v4M5.5 16v-4h13v4"/></svg><span class="tooltip">Infrastructure</span></a>
       <a class="nav-link" href="#events" aria-label="Journal d’événements"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><span class="tooltip">Journal en direct</span></a>
     </nav>
-    <button class="rail-bottom" id="logout-button" type="button" aria-label="Fermer la session"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M14 8l4 4-4 4M8 12h10"/></svg><span class="tooltip">Fermer la session</span></button>
+    <button class="rail-bottom" id="refresh-button" type="button" aria-label="Actualiser les mesures"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg><span class="tooltip">Actualiser les mesures</span></button>
   </aside>
   <div class="shell">
     <header class="topbar">
@@ -42,7 +247,7 @@
       <div class="topbar-right"><div class="clock mono"><time id="clock-time">--:--:--</time><div class="clock-date" id="clock-date">—</div></div><div class="status-chip" id="global-status" data-tone="warning" role="status"><span class="led"></span><span id="global-status-text">Initialisation</span></div></div>
     </header>
     <main id="overview">
-      <div class="page-heading"><div><div class="heading-kicker">MISSION CONTROL</div><h1>Tour de contrôle<span style="color:var(--cyan)">.</span></h1><p class="subtitle">Toute votre infrastructure. Une seule vue.</p></div><div class="telemetry-info"><div class="stream-label" id="stream-state" data-tone="warning"><span class="led"></span><span id="stream-state-text">Connexion…</span></div><div>Collecte toutes les <span class="mono">2 s</span></div><div>Dernier relevé <span class="mono" id="last-update">—</span></div></div></div>
+      <div class="page-heading"><h1>Tour de contrôle<span style="color:var(--cyan)">.</span></h1><div class="telemetry-info"><div class="stream-label" id="stream-state" data-tone="warning"><span class="led"></span><span id="stream-state-text">Connexion…</span></div><div class="collection-interval">Collecte <span class="mono">2 s</span></div><div>Relevé <span class="mono" id="last-update">—</span></div></div></div>
       <div class="connection-banner" id="connection-banner" role="status" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v4M12 17h.01"/></svg><span id="connection-message"></span></div>
       <section aria-labelledby="hardware-title">
         <div class="section-heading"><h2 id="hardware-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg>Ressources matérielles</h2><span class="meta" id="uptime">UPTIME —</span></div>
@@ -55,14 +260,14 @@
       </section>
       <section id="services" aria-labelledby="services-title"><div class="section-heading"><h2 id="services-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>Services & applications</h2><span class="meta" id="service-count">— / 4 EN LIGNE</span></div><div class="services-grid" id="services-grid"></div></section>
       <div class="bottom-grid">
-        <section id="infrastructure" aria-labelledby="infrastructure-title"><div class="section-heading"><h2 id="infrastructure-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 17H6a4 4 0 0 1-.7-7.9 7 7 0 0 1 13.4 0A4 4 0 0 1 18 17h-2M12 13v8M9 18l3 3 3-3"/></svg>Infrastructure & réseau</h2><span class="meta">CONNECTIVITÉ</span></div><div class="network-grid"><article class="card network-card"><div class="network-top"><div class="network-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17a4 4 0 0 1-.6-7.8A6 6 0 0 1 16 7a5 5 0 0 1 2 10H5ZM8 13l2-2 2 2 2-2 2 2"/></svg></div><span class="badge" id="cloudflare-badge"><span class="led"></span><span>EN ATTENTE</span></span></div><h3 class="network-name">Cloudflare Tunnel</h3><p class="network-meta">cloudflared</p><div class="network-footer"><span>État systemd</span><strong id="cloudflare-state">—</strong></div><p class="network-error" id="cloudflare-error" hidden></p></article><article class="card network-card"><div class="network-top"><div class="network-icon whatsapp"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13.4 7.9L3 21l1.6-4.6A9 9 0 1 1 21 11.5Z"/><path d="M8.5 7.5c-2 3 1 6 4 8l2-1.5-2-2-1 1c-1.5-1-2.5-2-3-3l1-1-1-1.5Z"/></svg></div><span class="badge" id="whatsapp-badge"><span class="led"></span><span>EN ATTENTE</span></span></div><h3 class="network-name">Passerelle WhatsApp</h3><p class="network-meta" id="whatsapp-phone">Session en attente</p><div class="network-footer"><span id="whatsapp-state">klasora-whatsapp</span><strong id="whatsapp-latency">— ms</strong></div><p class="network-error" id="whatsapp-error" hidden></p></article></div><div class="section-heading"><h2><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/></svg>Serveurs distants</h2><span class="meta" id="vps-count">0 VPS</span></div><div class="card vps-panel" id="vps-list"><div class="vps-empty"><div class="vps-empty-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="3"/></svg></div><div><strong>En attente de télémétrie</strong><p>Les VPS apparaîtront dès leur premier rapport.</p></div></div></div></section>
+        <section id="infrastructure" aria-labelledby="infrastructure-title"><div class="section-heading"><h2 id="infrastructure-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 17H6a4 4 0 0 1-.7-7.9 7 7 0 0 1 13.4 0A4 4 0 0 1 18 17h-2M12 13v8M9 18l3 3 3-3"/></svg>Infrastructure & réseau</h2><span class="meta">CONNECTIVITÉ</span></div><div class="network-grid"><article class="card network-card"><div class="network-top"><div class="network-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17a4 4 0 0 1-.6-7.8A6 6 0 0 1 16 7a5 5 0 0 1 2 10H5ZM8 13l2-2 2 2 2-2 2 2"/></svg></div><span class="badge" id="cloudflare-badge"><span class="led"></span><span>EN ATTENTE</span></span></div><h3 class="network-name">Cloudflare Tunnel</h3><p class="network-meta">cloudflared</p><div class="network-footer"><span>État systemd</span><strong id="cloudflare-state">—</strong></div><p class="network-error" id="cloudflare-error" hidden></p></article><article class="card network-card"><div class="network-top"><div class="network-icon whatsapp"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-13.4 7.9L3 21l1.6-4.6A9 9 0 1 1 21 11.5Z"/><path d="M8.5 7.5c-2 3 1 6 4 8l2-1.5-2-2-1 1c-1.5-1-2.5-2-3-3l1-1-1-1.5Z"/></svg></div><span class="badge" id="whatsapp-badge"><span class="led"></span><span>EN ATTENTE</span></span></div><h3 class="network-name">Passerelle WhatsApp</h3><p class="network-meta" id="whatsapp-phone">Session en attente</p><div class="network-footer"><span id="whatsapp-state">klasora-whatsapp</span><strong id="whatsapp-latency">— ms</strong></div><p class="network-error" id="whatsapp-error" hidden></p></article></div></section>
+        <section id="remote-servers" aria-labelledby="vps-title"><div class="section-heading"><h2 id="vps-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/></svg>Serveurs distants</h2><span class="meta" id="vps-count">0 VPS</span></div><div class="card vps-panel" id="vps-list"><div class="vps-empty"><div class="vps-empty-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="3"/></svg></div><div><strong>En attente de télémétrie</strong><p>Les VPS apparaîtront dès leur premier rapport.</p></div></div></div></section>
         <section id="events" aria-labelledby="events-title"><div class="section-heading"><h2 id="events-title"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 5 5-5 5M12 17h8"/></svg>Journal d’événements</h2><span class="meta" id="event-count">0 ÉVÉNEMENT</span></div><div class="card terminal-card"><div class="terminal-header"><div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div><span class="terminal-name">noc / live-events</span><div class="console-controls"><button class="console-button" id="autoscroll-button" type="button" aria-pressed="true">Défilement auto</button></div></div><div class="events-list" id="events-list" role="log" aria-label="Événements de supervision" aria-live="polite" aria-relevant="additions"><p class="console-empty" id="events-empty">Connexion au collecteur…<br>Les changements d’état s’afficheront ici.<span class="terminal-cursor" aria-hidden="true"></span></p></div><div class="terminal-footer"><span id="console-state">EN ATTENTE DU FLUX</span><span>200 événements max.</span></div></div></section>
       </div>
       <footer><div class="footer-left"><span>NOC <span style="color:#8194af">/</span> MISSION CONTROL</span><span class="footer-status" id="footer-status"><span class="led"></span><span id="collector-label">Collecteur en attente</span></span></div><span>Processus : <span id="process-memory">—</span> · Flux SSE</span></footer>
     </main>
   </div>
-  <template id="service-template"><article class="card service-card"><div class="service-header"><div class="service-logo"></div><span class="badge service-badge"><span class="led"></span><span class="service-badge-text">EN ATTENTE</span></span></div><h3 class="service-name"></h3><p class="service-port"></p><div class="service-measure"><div><div class="service-measure-label">Réponse HTTP</div><div class="latency"><span class="service-latency">—</span><small>ms</small></div></div><span class="http-status">HTTP —</span></div><div class="service-footer"><span class="service-systemd">systemd : —</span><button class="restart-button" type="button" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>Restart</button></div><p class="service-error" hidden></p></article></template>
-  <dialog id="login-dialog" aria-labelledby="login-title" aria-describedby="login-description"><form id="login-form"><div class="dialog-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg></div><div class="eyebrow" style="margin-bottom:8px">ACCÈS SÉCURISÉ</div><h2 id="login-title">Votre centre de contrôle</h2><p id="login-description">Saisissez votre jeton d’accès pour ouvrir la session de supervision.</p><label class="dialog-label" for="login-token">Jeton d’accès</label><input type="password" id="login-token" name="token" autocomplete="current-password" required spellcheck="false"><div class="dialog-error" id="login-error" role="alert" hidden></div><div class="dialog-actions"><button class="button primary" id="login-submit" type="submit">Se connecter</button></div><p class="login-note">Le jeton n’est pas conservé dans le navigateur.</p></form></dialog>
+  <template id="service-template"><article class="card service-card"><div class="service-header"><div class="service-logo"></div><div class="service-identity"><h3 class="service-name"></h3><p class="service-port"></p></div><span class="badge service-badge"><span class="led"></span><span class="service-badge-text">EN ATTENTE</span></span></div><div class="service-measure"><div><div class="service-measure-label">Réponse HTTP</div><div class="latency"><span class="service-latency">—</span><small>ms</small></div></div><span class="http-status">HTTP —</span></div><div class="service-footer"><span class="service-systemd">systemd : —</span><button class="restart-button" type="button" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>Restart</button></div><p class="service-error" hidden></p></article></template>
   <dialog id="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description"><form id="restart-form"><div class="dialog-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg></div><div class="eyebrow" style="margin-bottom:8px">ACTION ADMINISTRATEUR</div><h2 id="restart-title">Redémarrer le service</h2><p id="restart-description"></p><label class="dialog-label" for="admin-token">Jeton administrateur</label><input type="password" id="admin-token" name="admin_token" autocomplete="off" required spellcheck="false"><div class="dialog-error" id="restart-error" role="alert" hidden></div><div class="dialog-actions"><button class="button" id="restart-cancel" type="button">Annuler</button><button class="button danger" id="restart-submit" type="submit">Confirmer le redémarrage</button></div></form></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
   <script>
@@ -97,7 +302,7 @@
         {name:'babamarket', label:'BabaMarket', port:5002, monogram:'BM'},
         {name:'moc-mal', label:'Moc-Mal', port:5003, monogram:'MC'}
       ];
-      const state = {snapshot:null, stream:null, lastReceipt:0, lastTimestamp:null, history:[], seenEvents:new Set(), autoScroll:true, stale:true, loginRequired:false, probePending:false, lastProbe:0, restartService:null, toastTimer:null, authenticating:false};
+      const state = {snapshot:null, stream:null, lastReceipt:0, lastTimestamp:null, history:[], seenEvents:new Set(), autoScroll:true, stale:true, probePending:false, lastProbe:0, restartService:null, toastTimer:null};
       const serviceNodes = new Map();
       serviceDefinitions.forEach(definition => {
         const card = $('service-template').content.firstElementChild.cloneNode(true);
@@ -339,18 +544,9 @@
       async function readResponse(response) {
         try { return await response.json(); } catch { return {}; }
       }
-      function showLogin() {
-        state.loginRequired = true;
-        if (state.stream) { state.stream.close(); state.stream = null; }
-        setStream(false, 'Authentification requise. Ouvrez une session pour recevoir les mesures.');
-        $('login-token').value = ''; $('login-error').hidden = true;
-        if (!$('login-dialog').open) $('login-dialog').showModal();
-        $('login-token').focus();
-      }
       async function loadSnapshot() {
         try {
           const response = await apiFetch('/api/snapshot');
-          if (response.status === 401) { showLogin(); return false; }
           if (!response.ok) throw new Error('Le collecteur est indisponible (HTTP ' + response.status + ').');
           render(await response.json());
           return true;
@@ -367,16 +563,19 @@
           catch { setStream(false, 'Une mesure invalide a été reçue. En attente du prochain relevé.'); }
         });
         stream.onopen = () => { if (state.snapshot && Date.now() - state.lastReceipt < 7500) setStream(true); };
-        stream.onerror = () => { setStream(false); renderServices(state.snapshot?.services, state.snapshot?.actions?.restart_enabled === true); probeSession(); };
+        stream.onerror = () => { setStream(false); renderServices(state.snapshot?.services, state.snapshot?.actions?.restart_enabled === true); probeSnapshot(); };
       }
-      async function probeSession() {
-        if (state.probePending || state.loginRequired || Date.now() - state.lastProbe < 10000) return;
+      async function probeSnapshot() {
+        if (state.probePending || Date.now() - state.lastProbe < 10000) return;
         state.probePending = true; state.lastProbe = Date.now();
         try {
           const response = await apiFetch('/api/snapshot', {}, 5000);
-          if (response.status === 401) showLogin();
-          else if (response.ok) render(await response.json(), false);
-        } catch { /* EventSource owns retry scheduling; last measurements remain visible. */ }
+          if (!response.ok) throw new Error('Le collecteur est indisponible (HTTP ' + response.status + ').');
+          render(await response.json(), false);
+        } catch (error) {
+          if (error.name !== 'AbortError') setStream(false, error.message || 'Impossible de joindre le collecteur.');
+          // EventSource owns retry scheduling; last measurements remain visible.
+        }
         finally { state.probePending = false; }
       }
       function openRestart(name, label) {
@@ -401,33 +600,12 @@
         } catch (error) { displayError('restart-error', error.name === 'AbortError' ? 'Délai dépassé. Vérifiez le prochain relevé avant de réessayer.' : error.message); }
         finally { token = ''; $('restart-submit').disabled = false; $('restart-cancel').disabled = false; }
       });
-      $('login-dialog').addEventListener('cancel', event => event.preventDefault());
-      $('login-form').addEventListener('submit', async event => {
-        event.preventDefault();
-        if (state.authenticating) return;
-        state.authenticating = true;
-        let token = $('login-token').value; $('login-token').value = ''; $('login-submit').disabled = true; $('login-error').hidden = true;
+      $('refresh-button').addEventListener('click', async () => {
+        $('refresh-button').disabled = true;
         try {
-          const response = await apiFetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token})});
-          token = '';
-          const body = await readResponse(response);
-          if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Jeton incorrect. Vérifiez votre jeton d’accès.' : typeof body.detail === 'string' ? body.detail : 'Connexion impossible (HTTP ' + response.status + ').');
-          state.loginRequired = false; $('login-dialog').close();
-          if (await loadSnapshot()) startStream();
-          else if (!state.loginRequired) startStream();
-        } catch (error) { displayError('login-error', error.name === 'AbortError' ? 'Le serveur ne répond pas. Réessayez dans quelques instants.' : error.message); }
-        finally { token = ''; state.authenticating = false; $('login-submit').disabled = false; }
-      });
-      $('logout-button').addEventListener('click', async () => {
-        $('logout-button').disabled = true;
-        try {
-          const response = await apiFetch('/api/logout', {method:'POST'});
-          if (!response.ok) throw new Error('La fermeture de session a échoué.');
-          if (state.stream) state.stream.close();
-          // Remove protected data from the document before starting a new session.
-          window.location.reload();
-        } catch (error) { toast(error.message || 'La fermeture de session a échoué.', 'error'); }
-        finally { $('logout-button').disabled = false; }
+          await loadSnapshot();
+          startStream();
+        } finally { $('refresh-button').disabled = false; }
       });
       $('autoscroll-button').addEventListener('click', () => {
         state.autoScroll = !state.autoScroll;
@@ -442,14 +620,14 @@
       function updateClock() { const now = new Date(); set('clock-time', clockFormat.format(now)); $('clock-time').dateTime = now.toISOString(); set('clock-date', shortDateFormat.format(now).toUpperCase()); }
       updateClock(); setInterval(updateClock, 1000);
       setInterval(() => {
-        if (state.snapshot && Date.now() - state.lastReceipt > 7500 && !state.loginRequired) {
+        if (state.snapshot && Date.now() - state.lastReceipt > 7500) {
           setStream(false, 'Aucun nouveau relevé depuis ' + ageLabel((Date.now() - state.lastReceipt) / 1000) + '. Reconnexion automatique en cours.');
           renderServices(state.snapshot.services, state.snapshot.actions?.restart_enabled === true);
-          probeSession();
+          probeSnapshot();
         }
       }, 2000);
       window.addEventListener('pagehide', () => { if (state.stream) state.stream.close(); });
-      (async () => { await loadSnapshot(); if (!state.loginRequired) startStream(); })();
+      (async () => { await loadSnapshot(); startStream(); })();
     })();
   </script>
 </body>
