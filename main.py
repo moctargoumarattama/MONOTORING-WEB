@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import shutil
+import sys
 import tempfile
 import time
 from contextlib import asynccontextmanager
@@ -29,6 +30,39 @@ from whatsapp import AUDIO_MIME_TYPES, WhatsAppController, parse_message
 
 LOGGER = logging.getLogger("noc-dashboard")
 BASE_DIR = Path(__file__).resolve().parent
+
+# Intégration de l'agent Jarvis headless (/opt/jarvis ou détection locale)
+JARVIS_DIR = Path(os.getenv("JARVIS_DIR", "/opt/jarvis")).resolve()
+if not JARVIS_DIR.exists():
+    fallback_jarvis = Path(os.getenv("USERPROFILE", "")) / "Jarvis"
+    if fallback_jarvis.exists():
+        JARVIS_DIR = fallback_jarvis.resolve()
+
+if JARVIS_DIR.exists() and str(JARVIS_DIR) not in sys.path:
+    sys.path.insert(0, str(JARVIS_DIR))
+    import importlib.util
+    jarvis_config_file = JARVIS_DIR / "config.py"
+    if jarvis_config_file.exists():
+        try:
+            spec = importlib.util.spec_from_file_location("jarvis_config_merged", str(jarvis_config_file))
+            if spec and spec.loader:
+                j_mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(j_mod)
+                if "config" in sys.modules:
+                    target_cfg = sys.modules["config"]
+                    for attr in dir(j_mod):
+                        if not attr.startswith("__") and not hasattr(target_cfg, attr):
+                            setattr(target_cfg, attr, getattr(j_mod, attr))
+        except Exception as _cfg_err:
+            LOGGER.warning("Impossible de fusionner Jarvis config : %s", _cfg_err)
+
+try:
+    from headless_bridge import JarvisHeadlessBridge
+    JARVIS_AVAILABLE = True
+except Exception as _jarvis_err:
+    JarvisHeadlessBridge = None
+    JARVIS_AVAILABLE = False
+    LOGGER.warning("JarvisHeadlessBridge indisponible : %s", _jarvis_err)
 
 
 class Metrics(BaseModel):
@@ -139,6 +173,13 @@ class Runtime:
         self.sentinel = SentinelManager(settings, self)
         self.cyber = CyberDefenseManager(settings, self)
         self.whatsapp = WhatsAppController(settings, self, self.restart_service)
+        self.jarvis: Any = None
+        if JARVIS_AVAILABLE and JarvisHeadlessBridge:
+            try:
+                self.jarvis = JarvisHeadlessBridge(base_dir=JARVIS_DIR)
+                LOGGER.info("JarvisHeadlessBridge connecté au Runtime NOC.")
+            except Exception as exc:
+                LOGGER.error("Erreur lors de l'initialisation de JarvisHeadlessBridge: %s", exc)
 
     def vps_snapshot(self) -> list[dict[str, Any]]:
         now = time.monotonic()
@@ -537,6 +578,95 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not token_matches(request.headers.get("x-vps-token"), settings.vps_token):
             raise HTTPException(401, "Jeton VPS incorrect")
         return await application.state.runtime.sentinel.accept(await limited_json(request, 16384))
+
+    # --------------------------------------------------------------------------
+    # API AGENT AUTONOME JARVIS
+    # --------------------------------------------------------------------------
+
+    class JarvisQueryPayload(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+        prompt: str = Field(..., min_length=1, max_length=4000)
+        source: str = Field(default="web_text")
+
+        @model_validator(mode="after")
+        def not_blank(self) -> JarvisQueryPayload:
+            if not self.prompt.strip():
+                raise ValueError("Le prompt ne peut pas être vide")
+            return self
+
+    @application.post("/api/jarvis/query")
+    async def jarvis_query(request: Request) -> JSONResponse:
+        runtime: Runtime = application.state.runtime
+        if not runtime.jarvis:
+            raise HTTPException(503, "Agent Jarvis non initialisé ou indisponible")
+        data = await limited_json(request, 32768)
+        payload = validate_payload(JarvisQueryPayload, data)
+        try:
+            result = await runtime.jarvis.execute_prompt_async(
+                user_input=payload.prompt.strip(),
+                source=payload.source,
+            )
+            return JSONResponse(result)
+        except Exception as exc:
+            LOGGER.exception("Erreur lors de l'exécution de Jarvis")
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "reply": f"Erreur interne lors de l'exécution de l'agent : {exc}",
+                    "thought_chain": [],
+                    "tools_used": [],
+                    "timestamp": collector.utc_now(),
+                },
+                status_code=500,
+            )
+
+    @application.get("/api/jarvis/status")
+    async def jarvis_status() -> JSONResponse:
+        runtime: Runtime = application.state.runtime
+        if not runtime.jarvis:
+            return JSONResponse(
+                {
+                    "status": "offline",
+                    "available": False,
+                    "message": "Module Jarvis headless non disponible sur ce serveur.",
+                }
+            )
+        try:
+            status = runtime.jarvis.get_status()
+            status["available"] = True
+            return JSONResponse(status)
+        except Exception as exc:
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "available": False,
+                    "error": str(exc),
+                },
+                status_code=500,
+            )
+
+    @application.get("/api/jarvis/history")
+    async def jarvis_history(limit: int = 20) -> JSONResponse:
+        runtime: Runtime = application.state.runtime
+        if not runtime.jarvis:
+            return JSONResponse({"history": [], "messages": []})
+        try:
+            history = runtime.jarvis.get_history(limit=min(max(1, limit), 100))
+            return JSONResponse({"history": history, "messages": history, "total": len(history)})
+        except Exception as exc:
+            return JSONResponse({"error": str(exc), "history": [], "messages": []}, status_code=500)
+
+    @application.delete("/api/jarvis/history/clear")
+    async def jarvis_clear_history() -> JSONResponse:
+        runtime: Runtime = application.state.runtime
+        if not runtime.jarvis:
+            raise HTTPException(503, "Agent Jarvis non initialisé")
+        try:
+            res = runtime.jarvis.clear_history()
+            res["ok"] = True
+            return JSONResponse(res)
+        except Exception as exc:
+            return JSONResponse({"status": "error", "message": str(exc), "ok": False}, status_code=500)
 
     return application
 
