@@ -206,6 +206,32 @@ class VoiceAPITests(unittest.TestCase):
         self.assertFalse(paths[0].exists())
         self.assertEqual(self.controller.uploading, 0)
 
+    def test_sender_message_contract_accepts_header_id_and_rejects_conflicts(self):
+        headers = {"X-Gateway-Secret": "webhook-secret", "X-Message-Id": "gateway-text-1"}
+        body = {"sender": ADMIN, "message": "statut"}
+        response = self.client.post("/api/whatsapp/webhook", json=body, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["accepted"])
+        self.assertNotIn("reply", response.json())
+        self.drain()
+        self.assertEqual(self.controller.last_command["action"], "status")
+        self.assertEqual(self.controller.last_command["id"], "gateway-text-1")
+        repeated = self.client.post("/api/whatsapp/webhook", json=body, headers=headers)
+        self.assertTrue(repeated.json()["duplicate"])
+        self.assertEqual(self.client.post("/api/whatsapp/webhook", json={**body, "id": "different"}, headers=headers).status_code, 422)
+        self.assertEqual(self.client.post("/api/whatsapp/webhook", json=body, headers={"X-Gateway-Secret": "webhook-secret"}).status_code, 422)
+
+    def test_raw_audio_accepts_x_sender_and_validates_both_identity_headers(self):
+        self.controller._transcribe = AsyncMock(return_value="statut")
+        headers = self.audio_headers()
+        headers.pop("X-WhatsApp-From")
+        headers["X-Sender"] = ADMIN + ":38@s.whatsapp.net"
+        response = self.client.post("/api/voice/process", content=b"OggSaudio", headers=headers)
+        self.assertEqual(response.status_code, 202)
+        self.drain()
+        headers["X-WhatsApp-From"] = "212770010265@s.whatsapp.net"
+        self.assertEqual(self.client.post("/api/voice/process", content=b"OggSaudio", headers=headers).status_code, 403)
+
     def test_audio_authentication_precedes_file_creation(self):
         with patch("main.tempfile.mkstemp") as create:
             for headers, expected in ((self.audio_headers(**{"X-Gateway-Secret": "wrong"}), 403),

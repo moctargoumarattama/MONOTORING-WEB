@@ -20,6 +20,10 @@ function phoneOf(jid) {
   return match ? match[1] : null;
 }
 
+function isLid(jid) {
+  return typeof jid === 'string' && /^\d{1,20}(?::\d{1,5})?@lid$/.test(jid);
+}
+
 function unwrap(content) {
   for (let depth = 0; content && depth < 4; depth++) {
     const nested = content.ephemeralMessage || content.viewOnceMessage || content.viewOnceMessageV2 || content.viewOnceMessageV2Extension;
@@ -112,6 +116,41 @@ function attachNocWebhook(sock, options = {}) {
     try { options.logger?.warn?.(`NOC bridge: ${code}`); } catch (_) { /* gateway logger must not affect reception */ }
   };
 
+  async function resolveAdministrator(item) {
+    if (!item.lid) return;
+    let mapping;
+    try { mapping = sock.signalRepository?.lidMapping; }
+    catch (_) { throw new BridgeError('lid_mapping_failed'); }
+    if (!mapping || typeof mapping.getPNForLID !== 'function') throw new BridgeError('lid_mapping_unavailable');
+    let expired = false;
+    let timer;
+    const promise = Promise.resolve().then(() => mapping.getPNForLID(item.lid));
+    // Mapping has no cancellation API. Pause the queue if the single lookup
+    // times out; do not create more unresolved jobs or trust its late result.
+    const release = () => {
+      if (!expired) return;
+      stalled = false;
+      if (!detached) setImmediate(() => { void pump(); });
+    };
+    promise.then(release, release);
+    let jid;
+    try {
+      jid = await Promise.race([promise, new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          expired = true;
+          stalled = true;
+          currentController?.abort();
+          reject(new BridgeError('lid_mapping_timeout'));
+        }, timeoutMs);
+      })]);
+    } catch (error) {
+      throw error instanceof BridgeError ? error : new BridgeError('lid_mapping_failed');
+    } finally { clearTimeout(timer); }
+    if (jid === null || jid === undefined) throw new BridgeError('lid_mapping_unknown');
+    if (phoneOf(jid) !== adminPhone) throw new BridgeError('lid_mapping_not_admin');
+    if (detached || currentController?.signal.aborted) throw new BridgeError('lid_mapping_cancelled');
+  }
+
   async function download(item, signal) {
     let expired = false;
     let timer;
@@ -167,6 +206,12 @@ function attachNocWebhook(sock, options = {}) {
       while (queue.length && !detached && !stalled) {
         const item = queue.shift();
         currentController = new AbortController();
+        try { await resolveAdministrator(item); }
+        catch (error) {
+          notify(error instanceof BridgeError ? error.code : 'lid_mapping_failed');
+          currentController = null;
+          continue;
+        }
         for (let attempt = 0; attempt < 2 && !detached; attempt++) {
           try { await send(item, currentController.signal); break; }
           catch (error) {
@@ -190,12 +235,19 @@ function attachNocWebhook(sock, options = {}) {
     for (const message of event.messages.slice(0, 64)) {
       const key = message?.key;
       if (!key || key.fromMe === true || (key.fromMe !== undefined && typeof key.fromMe !== 'boolean') || typeof key.remoteJid !== 'string' || key.remoteJid.endsWith('@g.us') || key.participant) continue;
-      const from = key.remoteJid.endsWith('@lid') ? key.remoteJidAlt : key.remoteJid;
-      if (phoneOf(from) !== adminPhone || typeof key.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(key.id)) continue;
+      let lid = null;
+      if (isLid(key.remoteJid)) {
+        if (key.remoteJidAlt === undefined || key.remoteJidAlt === null) lid = key.remoteJid;
+        else if (phoneOf(key.remoteJidAlt) !== adminPhone) continue;
+      } else {
+        if (phoneOf(key.remoteJid) !== adminPhone) continue;
+        if (key.remoteJidAlt !== undefined && key.remoteJidAlt !== null && !isLid(key.remoteJidAlt) && phoneOf(key.remoteJidAlt) !== adminPhone) continue;
+      }
+      if (typeof key.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(key.id)) continue;
       const content = unwrap(message.message);
       const audio = content?.audioMessage;
       const text = content?.conversation || content?.extendedTextMessage?.text;
-      if (!audio && (typeof text !== 'string' || !text.trim() || text.length > 2000)) continue;
+      if (!audio && (typeof text !== 'string' || !text.trim() || text.length > 1000)) continue;
       const mimetype = String(audio?.mimetype || 'audio/ogg').split(';', 1)[0].trim().toLowerCase();
       if (audio && (!['audio/ogg', 'audio/opus', 'audio/mpeg', 'audio/wav', 'application/octet-stream'].includes(mimetype) || Number(audio.fileLength) > maximum || Number(audio.seconds) > 60)) continue;
       const dedup = `${sessionId}:${key.id}`;
@@ -203,7 +255,7 @@ function attachNocWebhook(sock, options = {}) {
       if (queue.length >= maxQueued) { notify('queue_full'); continue; }
       seen.set(dedup, true);
       while (seen.size > 256) seen.delete(seen.keys().next().value);
-      queue.push({ message, id: key.id, audio: Boolean(audio), mimetype, text, timestamp: Number(message.messageTimestamp) || Math.floor(Date.now() / 1000) });
+      queue.push({ message, lid, id: key.id, audio: Boolean(audio), mimetype, text, timestamp: Number(message.messageTimestamp) || Math.floor(Date.now() / 1000) });
       void pump();
     }
   }

@@ -42,6 +42,12 @@ def normalize_phone(value: Any) -> str:
         phone, domain = phone.rsplit("@", 1)
         if domain not in {"c.us", "s.whatsapp.net"}:
             raise ValueError("Seuls les messages personnels sont autorisés")
+        # Baileys peut désigner un appareil PN par numéro:appareil@serveur.
+        # Cette règle ne s'applique jamais aux identifiants indépendants @lid.
+        match = re.fullmatch(r"([0-9]{8,15})(?::[0-9]{1,10})?", phone)
+        if not match:
+            raise ValueError("Identifiant personnel WhatsApp invalide")
+        return match[1]
     if not re.fullmatch(r"\+?[0-9 ()-]+", phone):
         raise ValueError("Numéro WhatsApp invalide")
     phone = re.sub(r"[^0-9]", "", phone)
@@ -75,6 +81,7 @@ def parse_message(payload: dict[str, Any], admin_phone_number: str) -> dict[str,
     """Normaliser le format documenté et les enveloppes usuelles des passerelles.
 
     Format stable: {id, from, text} ou {id, from, audio:{path|url,mimetype}}.
+    Alias: {messageId, sender, message:texte}. L'identifiant reste obligatoire.
     Enveloppe acceptée: {event:'message',data:{id,from,body,type,media}}.
     Une passerelle Baileys doit fournir un média déjà déchiffré via path/url.
     """
@@ -93,26 +100,44 @@ def parse_message(payload: dict[str, Any], admin_phone_number: str) -> dict[str,
         raise ValueError("fromMe doit être un booléen")
     if data.get("fromMe") is True or key.get("fromMe") is True:
         return None  # Éviter les boucles avec nos propres réponses.
-    sender = data.get("from", key.get("remoteJid"))
     try:
-        phone = normalize_phone(sender)
         admin = normalize_phone(admin_phone_number)
+        # Vérifier TOUS les champs explicites : un alias autorisé ne doit pas
+        # dissimuler un autre numéro, un groupe ou un identifiant invalide.
+        senders = [item[name] for item, name in ((data, "from"), (data, "sender"), (key, "remoteJid"))
+                   if name in item]
+        if not senders:
+            raise ValueError("Émetteur obligatoire")
+        phones = []
+        has_lid = False
+        for sender in senders:
+            if isinstance(sender, str) and re.fullmatch(r"[0-9]{1,30}(?::[0-9]{1,10})?@lid", sender.strip()):
+                has_lid = True
+            else:
+                phones.append(normalize_phone(sender))
+        associated = [item[name] for item, name in ((data, "senderPn"), (key, "remoteJidAlt"))
+                      if name in item]
+        if has_lid and not associated:
+            raise ValueError("LID sans numéro personnel associé")
+        phones.extend(normalize_phone(sender) for sender in associated)
+        if not phones or any(phone != admin for phone in phones):
+            raise ValueError("Émetteur non autorisé ou contradictoire")
     except ValueError as exc:
         raise PermissionError("Émetteur non autorisé") from exc
-    if phone != admin:
-        raise PermissionError("Émetteur non autorisé")
-    message_id = data.get("id", key.get("id"))
+    message_id = data.get("id", data.get("messageId", key.get("id")))
     if isinstance(message_id, dict):
         message_id = message_id.get("id", message_id.get("_serialized"))
     if not isinstance(message_id, str) or not re.fullmatch(r"[\w.:@+-]{1,128}", message_id):
         raise ValueError("Identifiant de message obligatoire (128 caractères maximum)")
-    message = data.get("message", {})
+    raw_message = data.get("message", {})
+    message_text = raw_message if isinstance(raw_message, str) else ""
+    message = raw_message
     if not isinstance(message, dict):
         message = {}
     extended = message.get("extendedTextMessage", {})
     if not isinstance(extended, dict):
         extended = {}
-    text = data.get("text", data.get("body", message.get("conversation", extended.get("text", ""))))
+    text = data.get("text", data.get("body", message.get("conversation", extended.get("text", message_text))))
     if not isinstance(text, str) or len(text) > 1000:
         raise ValueError("Texte limité à 1000 caractères")
     audio = data.get("audio")
@@ -147,9 +172,11 @@ def parse_intent(text: str) -> tuple[str, str | None]:
                          if not unicodedata.combining(char))
     normalized = " ".join(normalized.strip().rstrip(".!?").split())
     # Homophone observé avec tiny en français : lecture seule, jamais une action.
-    if normalized in {"statut", "etat", "statut des services", "etat des services",
+    if normalized in {"status", "statut", "etat", "statut des services", "etat des services",
                       "statue", "statue des services", "statuts", "statuts des services"}:
         return "status", None
+    if normalized in {"aide", "help"}:
+        return "help", None
     match = re.fullmatch(r"(?:redemarre|restart) ([a-z0-9-]+)", normalized)
     if match and match[1] in RESTART_ALLOWLIST:
         return "restart", match[1]
@@ -429,6 +456,8 @@ class WhatsAppController:
                 self.queue.task_done()
 
     async def _execute(self, action: str, service: str | None) -> tuple[str, bool]:
+        if action == "help":
+            return ("Commandes : statut (ou status) ; redémarre klasora (ou merca-market, babamarket, moc-mal) ; sauvegarde babamarket ; aide.", True)
         if action == "status":
             latest = self.runtime.latest or {}
             lines = ["🛰 État de l'infrastructure"]
@@ -453,7 +482,7 @@ class WhatsAppController:
             return (f"✅ {service} : redémarrage demandé." if success else f"❌ {service} : redémarrage refusé ou en échec."), success
         if action == "backup":
             return await self._backup()
-        return ("Commande non reconnue. Envoyez : statut ; redémarre klasora (ou merca-market, babamarket, moc-mal) ; sauvegarde babamarket.", False)
+        return ("Commande non reconnue. Envoyez : statut ; redémarre klasora (ou merca-market, babamarket, moc-mal) ; sauvegarde babamarket ; aide.", False)
 
     async def _backup(self) -> tuple[str, bool]:
         configured = self.settings.backup_script

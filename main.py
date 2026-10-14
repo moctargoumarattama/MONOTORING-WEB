@@ -369,12 +369,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         payload = await limited_json(request, 32768)
         if not isinstance(payload, dict):
             raise HTTPException(422, "Message WhatsApp invalide")
+        # L'ID Baileys peut venir du header, mais doit rester stable lors des reprises.
+        message_header = request.headers.get("x-message-id")
+        data = payload.get("data", payload)
+        if message_header and isinstance(data, dict):
+            key = data.get("key") if isinstance(data.get("key"), dict) else {}
+            supplied = data.get("id", data.get("messageId", key.get("id")))
+            if supplied is not None and supplied != message_header:
+                raise HTTPException(422, "Identifiants de message contradictoires")
+            if supplied is None:
+                payload = dict(payload)
+                enriched = {**data, "id": message_header}
+                if "data" in payload:
+                    payload["data"] = enriched
+                else:
+                    payload = enriched
         try:
             return await application.state.runtime.whatsapp.accept(payload)
         except PermissionError:
             raise HTTPException(403, "Émetteur non autorisé") from None
         except ValueError:
-            raise HTTPException(422, "Message WhatsApp invalide") from None
+            raise HTTPException(422, "Message invalide : fournir l'ID Baileys stable (id, messageId ou X-Message-Id) et un texte valide") from None
         except asyncio.QueueFull:
             raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"}) from None
 
@@ -391,9 +406,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(415, "Audio HTTP compressé interdit")
         controller = application.state.runtime.whatsapp
         payload = {"sessionId": request.headers.get("x-session-id", settings.whatsapp_session_id),
-                   "from": request.headers.get("x-whatsapp-from"),
+                   "from": request.headers.get("x-whatsapp-from", request.headers.get("x-sender")),
                    "id": request.headers.get("x-message-id"),
                    "audio": {"path": "uploaded-audio", "mimetype": "audio/ogg" if content_type == "application/octet-stream" else content_type}}
+        if request.headers.get("x-sender"):
+            payload["sender"] = request.headers["x-sender"]
+        if request.headers.get("x-sender-pn"):
+            payload["senderPn"] = request.headers["x-sender-pn"]
         try:
             parse_message(payload, settings.admin_phone_number)
             if payload["sessionId"] != settings.whatsapp_session_id:
@@ -401,7 +420,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except PermissionError:
             raise HTTPException(403, "Émetteur ou session non autorisé") from None
         except ValueError:
-            raise HTTPException(422, "Headers X-WhatsApp-From et X-Message-Id valides requis") from None
+            raise HTTPException(422, "Headers X-WhatsApp-From (ou X-Sender) et X-Message-Id valides requis") from None
         if controller.uploading >= 2 or controller.queue.full():
             raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"})
         limit = settings.whatsapp_max_audio_bytes

@@ -132,3 +132,121 @@ test('an unresolved Baileys download cannot accumulate orphan downloads', async 
   assert.equal(calls, 2);
   assert.equal(f.received[0].headers['x-message-id'], 'AFTER');
 });
+
+test('trusted Baileys LID mapping authorizes exact administrator before text or media delivery', async t => {
+  let mapped = false;
+  let downloads = 0;
+  const lookedUp = [];
+  const f = await fixture(t, { downloadMediaMessage: async () => {
+    assert.equal(mapped, true, 'identity mapping must precede media decryption');
+    downloads++;
+    return Readable.from([Buffer.from('OggS-authorized')]);
+  } });
+  const lidMapping = { getPNForLID: async function (lid) {
+    assert.equal(this, lidMapping, 'Baileys mapping method must retain its repository binding');
+    lookedUp.push(lid);
+    mapped = true;
+    return '212770010264:2@s.whatsapp.net';
+  } };
+  f.sock.signalRepository = { lidMapping };
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('MAPPED_TEXT', { conversation: 'statut' }, { remoteJid: '987654:2@lid' }),
+    incoming('MAPPED_AUDIO', { audioMessage: { mimetype: 'audio/ogg' } }, { remoteJid: '987654:2@lid' })
+  ]));
+  await until(() => f.received.length === 2);
+  assert.deepEqual(lookedUp, ['987654:2@lid', '987654:2@lid']);
+  assert.equal(downloads, 1);
+  assert.ok(f.received.every(row => row.headers['x-whatsapp-from'] === '212770010264@s.whatsapp.net'));
+});
+
+test('nonadministrator LID mapping never downloads media or POSTs', async t => {
+  const f = await fixture(t, { downloadMediaMessage: async () => assert.fail('unauthorized LID media download') });
+  f.sock.signalRepository = { lidMapping: { getPNForLID: async () => '212600000000@s.whatsapp.net' } };
+  f.sock.ev.emit('messages.upsert', event([incoming('NONADMIN_LID', { audioMessage: { mimetype: 'audio/ogg' } }, { remoteJid: '987654@lid' })]));
+  await until(() => f.logs.some(line => line.includes('lid_mapping_not_admin')));
+  assert.equal(f.received.length, 0);
+  assert.ok(f.logs.every(line => !line.includes('212600000000') && !line.includes('987654')));
+});
+
+test('unknown LID mappings and nonstring mapping results fail closed', async t => {
+  const f = await fixture(t, { downloadMediaMessage: async () => assert.fail('unknown LID media download') });
+  const results = [null, undefined, { pn: '212770010264@s.whatsapp.net' }, '212770010264@lid'];
+  f.sock.signalRepository = { lidMapping: { getPNForLID: async () => results.shift() } };
+  f.sock.ev.emit('messages.upsert', event(['NULL_LID', 'UNDEFINED_LID', 'OBJECT_LID', 'FAKE_PHONE_LID'].map(id => incoming(id, { conversation: 'statut' }, { remoteJid: '212770010264@lid' }))));
+  await until(() => f.logs.length === 4);
+  assert.equal(f.received.length, 0);
+  assert.ok(f.logs.some(line => line.includes('lid_mapping_unknown')));
+  assert.ok(f.logs.some(line => line.includes('lid_mapping_not_admin')));
+});
+
+test('unavailable LID mapping API drops the message with a safe warning', async t => {
+  const f = await fixture(t, { downloadMediaMessage: async () => assert.fail('LID without API must not download') });
+  f.sock.ev.emit('messages.upsert', event([incoming('NO_MAPPING_API', { audioMessage: { mimetype: 'audio/ogg' } }, { remoteJid: '212770010264@lid' })]));
+  await until(() => f.logs.some(line => line.includes('lid_mapping_unavailable')));
+  assert.equal(f.received.length, 0);
+  assert.deepEqual(f.logs, ['NOC bridge: lid_mapping_unavailable']);
+});
+
+test('mapping errors stay isolated and do not expose exception contents or stop later messages', async t => {
+  const f = await fixture(t);
+  f.sock.signalRepository = { lidMapping: { getPNForLID: async () => { throw new Error('private-mock-token sensitive identity'); } } };
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('MAPPING_ERROR', { conversation: 'statut' }, { remoteJid: '987654@lid' }),
+    incoming('AFTER_MAPPING_ERROR', { conversation: 'statut' })
+  ]));
+  await until(() => f.received.length === 1);
+  assert.equal(f.received[0].headers['x-message-id'], 'AFTER_MAPPING_ERROR');
+  assert.deepEqual(f.logs, ['NOC bridge: lid_mapping_failed']);
+});
+
+test('supplied conflicting alternate JIDs are rejected instead of using the mapping fallback', async t => {
+  const f = await fixture(t, { downloadMediaMessage: async () => assert.fail('conflicting alternate identity') });
+  f.sock.signalRepository = { lidMapping: { getPNForLID: async () => assert.fail('must not override supplied alternate identity') } };
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('CONFLICT_LID', { conversation: 'statut' }, { remoteJid: '987654@lid', remoteJidAlt: '212600000000@s.whatsapp.net' }),
+    incoming('EMPTY_ALT_LID', { conversation: 'statut' }, { remoteJid: '987654@lid', remoteJidAlt: '' }),
+    incoming('CONFLICT_PHONE', { conversation: 'statut' }, { remoteJidAlt: '212600000000@s.whatsapp.net' }),
+    incoming('OTHER_WITH_ADMIN_ALT', { conversation: 'statut' }, { remoteJid: '212600000000@s.whatsapp.net', remoteJidAlt: '212770010264@s.whatsapp.net' })
+  ]));
+  await sleep(100);
+  assert.equal(f.received.length, 0);
+  assert.equal(f.logs.length, 0);
+});
+
+test('one unresolved LID mapping pauses the bounded queue without disturbing gateway listeners', async t => {
+  let calls = 0;
+  let release;
+  let originalCalls = 0;
+  const f = await fixture(t, { timeoutMs: 1000, maxQueued: 1, downloadMediaMessage: async () => assert.fail('text lookup must not download') });
+  f.sock.signalRepository = { lidMapping: { getPNForLID: async () => {
+    calls++;
+    if (calls === 1) return new Promise(resolve => { release = resolve; });
+    return '212770010264@s.whatsapp.net';
+  } } };
+  f.sock.ev.on('messages.upsert', () => originalCalls++);
+  f.sock.ev.emit('messages.upsert', event(['STALLED_LID', 'AFTER_LID', 'EXCESS_LID'].map(id => incoming(id, { conversation: 'statut' }, { remoteJid: '987654@lid' }))));
+  await until(() => f.logs.some(line => line.includes('lid_mapping_timeout')));
+  await sleep(100);
+  assert.equal(calls, 1, 'no second orphan lookup may start after timeout');
+  assert.equal(originalCalls, 1);
+  assert.equal(f.received.length, 0);
+  assert.ok(f.logs.some(line => line.includes('queue_full')));
+  release('212770010264@s.whatsapp.net');
+  await until(() => f.received.length === 1);
+  assert.equal(calls, 2);
+  assert.equal(f.received[0].headers['x-message-id'], 'AFTER_LID', 'late result must not deliver the expired message');
+  f.detach();
+  assert.equal(f.sock.ev.listenerCount('messages.upsert'), 1);
+});
+
+test('text limit matches the backend 1000-character bound before identity work', async t => {
+  const f = await fixture(t);
+  f.sock.signalRepository = { lidMapping: { getPNForLID: async () => assert.fail('oversized text must not trigger identity lookup') } };
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('TEXT_TOO_LONG', { conversation: 's'.repeat(1001) }, { remoteJid: '987654@lid' }),
+    incoming('TEXT_BOUNDARY', { conversation: 's'.repeat(1000) })
+  ]));
+  await until(() => f.received.length === 1);
+  assert.equal(f.received[0].headers['x-message-id'], 'TEXT_BOUNDARY');
+  assert.equal(JSON.parse(f.received[0].body).data.text.length, 1000);
+});

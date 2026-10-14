@@ -59,7 +59,7 @@ if [[ -n "$UNIT_LOAD_STATE" && "$UNIT_LOAD_STATE" != not-found ]]; then
 fi
 readonly APP_USER APP_GROUP
 
-PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service integrations/baileys-noc.cjs README.md MODULES.md .gitignore)
+PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service integrations/baileys-noc.cjs tools/repair_whatsapp_contract.py README.md MODULES.md .gitignore)
 for relative in "${PROJECT_FILES[@]}" static/index.html; do
     [[ -f "$SOURCE_DIR/$relative" && ! -L "$SOURCE_DIR/$relative" ]] || fail "fichier source manquant ou lien symbolique : $relative."
 done

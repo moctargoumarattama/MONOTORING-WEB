@@ -96,6 +96,41 @@ Ces chemins suivent les nouveaux défauts ; utilisez votre chemin configuré s'i
 
 ## 2. Configurer le webhook de la passerelle WhatsApp
 
+### Réparer le relais existant sans éditeur
+
+Le diagnostic fourni montre `POST {sender,message}` refusé avec « Émetteur non autorisé ». Dans cette version, l'ancien backend lisait `from` ou `key.remoteJid`, donc le champ `sender` était absent de la comparaison. Le POST audio lisait `X-WhatsApp-From`, alors que le relais utilisait `X-Sender`. Les deux variantes sont désormais prises en charge ; les valeurs contradictoires restent refusées.
+
+Le bloc Node communiqué avait également un numéro admin **codé en dur pour tous les expéditeurs**, aucun ID Baileys et une référence `audioMsg` non définie. Le [script de réparation](tools/repair_whatsapp_contract.py) reconnaît uniquement ce bloc précis et le remplace par le bridge borné. Une source différente ou plusieurs blocs sont refusés avant toute modification. Il conserve les autres gestionnaires, les comptes systemd, les secrets existants et le code Python hors des fonctions corrigées.
+
+Transférez l'archive actuelle sur le Dell, puis exécutez en une passe :
+
+```bash
+tar -xzf "$HOME/noc-dashboard.tar.gz" -C "$HOME"
+cd "$HOME/noc-dashboard"
+sudo python3.11 tools/repair_whatsapp_contract.py --apply --probe
+```
+
+Sans `--apply`, le script effectue uniquement la préparation. Avec `--apply`, il sauvegarde les fichiers dans `/var/backups/noc-dashboard/whatsapp-relay-*`, valide Python/Node et l'export Baileys, synchronise le secret entrant de `/etc/noc-dashboard.env` vers un fichier privé de la passerelle, puis redémarre **seulement** `noc-dashboard.service` et `klasora-whatsapp.service`. Le secret d'envoi `NOC_GATEWAY_SECRET` reste inchangé. Il vérifie le NOC et la ligne `NOC relay ready` de la nouvelle invocation systemd ; un échec restaure les fichiers et tente de rétablir l'état précédent des deux services. `--probe` poste une seule commande `statut` au backend avec un ID unique et affiche séparément réception, traitement et livraison HTTP. Ce test direct ne simule pas une réception WhatsApp : envoyez ensuite un message texte et une note vocale depuis le téléphone administrateur.
+
+Les champs `myPN: 212684056613:38@s.whatsapp.net` et `myLID` du journal désignent **le bot**, pas l'administrateur. Un suffixe d'appareil `:38` est retiré uniquement d'un JID personnel valide. Pour un LID entrant, le bridge utilise `remoteJidAlt` ou la correspondance locale [`getPNForLID` de Baileys](https://github.com/WhiskeySockets/Baileys/blob/master/src/Signal/lid-mapping.ts) avant de vérifier exactement `212770010264`. Un LID sans correspondance est refusé et n'est jamais converti arbitrairement en numéro.
+
+L'identifiant Baileys reste obligatoire : `id`, `messageId`, ou `X-Message-Id`. Un appel curl `{sender,message}` sans ID répond maintenant `422`, et non `403` ; ne générez pas un nouvel ID à chaque reprise d'une même commande. Exemple valide, avec jeton lu sans l'afficher :
+
+```bash
+NOC_WEBHOOK_TOKEN="$(sudo sed -n 's/^NOC_WHATSAPP_WEBHOOK_TOKEN=//p' /etc/noc-dashboard.env)"
+NOC_MESSAGE_ID="$(python3.11 -c 'import uuid; print(uuid.uuid4().hex)')"
+{
+  printf 'header = "X-Gateway-Secret: %s"\n' "$NOC_WEBHOOK_TOKEN"
+  printf 'header = "X-Message-Id: %s"\n' "$NOC_MESSAGE_ID"
+} | curl --config - --fail-with-body --silent --show-error \
+    --header 'Content-Type: application/json' \
+    --data '{"sender":"212770010264","message":"statut"}' \
+    http://127.0.0.1:5050/api/whatsapp/webhook
+unset NOC_WEBHOOK_TOKEN NOC_MESSAGE_ID
+```
+
+Le POST répond `{accepted,duplicate}` ; la réponse finale est envoyée plus tard par le NOC à `/message/send`. Le bloc `server.js` fourni ne lit pas le corps de la réponse HTTP : rien ne prouve un conflit `reply`/`text` dans ce bloc. `last_command.status=completed` avec `reply_sent=false` indique un problème sur le chemin de retour (route ou secret d'envoi), tandis qu'une transcription en échec apparaît dans `last_command.response`. Le `403` observé arrive **avant** l'audio et ne constitue pas un échec Whisper.
+
 ### Bridge Baileys pour les notes vocales réelles
 
 L'URL `mmg.whatsapp.net` d'un `audioMessage` contient un blob chiffré. Le module [integrations/baileys-noc.cjs](integrations/baileys-noc.cjs) réutilise `downloadMediaMessage` de la **version Baileys déjà installée**, avec le mode `stream`, puis envoie l'audio déchiffré au NOC. Ce mode et `sock.updateMediaMessage` sont décrits dans la [documentation Baileys](https://github.com/WhiskeySockets/docs/blob/main/messaging/media-messages.mdx). Aucun nouveau paquet Node n'est nécessaire.
