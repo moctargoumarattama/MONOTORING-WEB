@@ -64,6 +64,8 @@ NOC_BACKUP_PATH=/mnt/babamarket-backups
 
 `NOC_GATEWAY_SECRET` et `NOC_VPS_TOKEN` doivent garder leurs valeurs réelles. L'installateur ajoute un secret privé aléatoire `NOC_WHATSAPP_WEBHOOK_TOKEN` s'il n'existe pas, sans l'afficher ni le renouveler à chaque mise à jour. Dans la configuration du webhook de la passerelle, recopiez cette valeur dans le header `X-Gateway-Secret`. Ce secret protège les messages entrants; les réponses envoyées à la passerelle gardent le `NOC_GATEWAY_SECRET` existant. Sans jeton webhook configuré, le canal de commandes est désactivé même si le numéro administrateur est renseigné.
 
+`ADMIN_PHONE_NUMBER` est normalisé en chiffres côté Python et Baileys : `+212 770-010-264` et `212770010264` désignent le même administrateur. Le filtre conserve la vérification du véritable expéditeur : groupes, autres numéros et LID sans correspondance PN sont refusés.
+
 Le bind `0.0.0.0` permet les accès LAN et Tailscale : `http://192.168.11.103:5050` et `http://100.68.163.14:5050`. Un ancien `NOC_HOST=127.0.0.1` empêcherait les rapports Sentinel venant du VPS. Un bind uniquement sur `100.68.163.14` est possible si vous souhaitez l'accès Tailscale seul; les commandes de vérification utilisant loopback doivent alors employer cette IP.
 
 ```bash
@@ -107,6 +109,8 @@ git pull --ff-only && sudo python3.11 tools/deploy_dashboard_update.py --apply
 ```
 
 Le script installe les fichiers du NOC et injecte l'alias dans `/opt/klasora/app/whatsapp-server/server.js`, **avant** l'enregistrement de `/session/:ecoleId/send`. Il conserve les autres routes, les secrets et les comptes systemd. Il sauvegarde les fichiers remplacés, synchronise le secret d'envoi de `/etc/noc-dashboard.env` avec la passerelle, vérifie les sources et l'import sous le compte de la passerelle, puis redémarre uniquement `noc-dashboard.service` et `klasora-whatsapp.service`. La disponibilité de l'alias est vérifiée avec un corps invalide authentifié pour ne pas envoyer de message. Une route ou un Map `sessions` non reconnu est refusé avant modification. Les fichiers écrits par le script sont restaurés si les services ne reviennent pas. Même lorsque `git pull` a déjà remplacé les sources directement sous `/opt`, le script redémarre les services.
+
+Il remplace aussi le bridge entrant réellement chargé, `/usr/local/lib/noc-integrations/baileys-noc.cjs`, et synchronise le numéro administrateur normalisé et le secret entrant configuré dans `/etc/klasora-whatsapp-noc.env`. Les deux modules Node sont vérifiés sous le compte de la passerelle avant son redémarrage. Lorsque le relais NOC installé est configuré, son marqueur de disponibilité doit apparaître dans les logs de la nouvelle invocation systemd. Un numéro volontairement vide reste désactivé sans empêcher la mise à jour.
 
 Le délai de réponse Python est de dix secondes (`NOC_WHATSAPP_SEND_TIMEOUT=10`), supérieur à la limite de huit secondes de l'alias. Un envoi expiré n'est pas réessayé automatiquement pour éviter un doublon. Envoyez ensuite `statut` depuis le numéro administrateur pour vérifier la livraison réelle.
 
@@ -281,7 +285,7 @@ Pour des fichiers locaux, renseignez `NOC_WHATSAPP_MEDIA_DIR` avec le dossier ex
 | `POST /api/voice/process` | Audio brut déchiffré, ou JSON normalisé compatible |
 | `POST /api/voice/simulate` | Analyse directe depuis le navigateur, toujours en simulation |
 
-Le POST audio accepte `audio/ogg`, `audio/opus`, `audio/mpeg`, `audio/wav` et `application/octet-stream`. Ses headers obligatoires sont `X-Gateway-Secret` (valeur de **NOC_WHATSAPP_WEBHOOK_TOKEN**, différente de `NOC_GATEWAY_SECRET`), `X-WhatsApp-From`, `X-Message-Id` et `X-Session-Id`. Le bridge envoie l'audio sur `/api/voice/process` et le texte sur `/api/voice/webhook`. Un upload accepté produit `202`, puis le résultat arrive dans le SSE ; le webhook JSON normalisé garde sa réponse `200`.
+Le POST audio accepte `audio/ogg`, `audio/opus`, `audio/mpeg`, `audio/wav` et `application/octet-stream`. Ses headers obligatoires sont `X-Gateway-Secret` (valeur de **NOC_WHATSAPP_WEBHOOK_TOKEN**, différente de `NOC_GATEWAY_SECRET`), `X-WhatsApp-From`, `X-Message-Id` et `X-Session-Id`. Le bridge envoie l'audio sur `/api/voice/process` et le texte sur `/api/whatsapp/webhook` ; `/api/voice/webhook` reste un alias compatible. Un upload accepté produit `202`, puis le résultat arrive dans le SSE ; le webhook JSON normalisé garde sa réponse `200`.
 
 La simulation ci-dessous ne redémarre **jamais** de service et n'envoie aucune réponse WhatsApp, même pour `restart babamarket`. Elle ne demande aucun jeton :
 

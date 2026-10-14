@@ -65,12 +65,15 @@ class Settings:
         ):
             raise ConfigurationError("NOC_REPORT_URL doit désigner /api/vps/report, sans identifiants ni paramètres.")
         try:
-            local = hostname.lower() == "localhost" or ipaddress.ip_address(hostname).is_loopback
+            address = ipaddress.ip_address(hostname)
+            private_transport = address.is_loopback or (
+                address.version == 4 and address in ipaddress.ip_network("100.64.0.0/10")
+            )
         except ValueError:
-            local = hostname.lower() == "localhost"
+            private_transport = hostname.lower() == "localhost"
         allow_http = os.environ.get("NOC_ALLOW_INSECURE_HTTP", "false").lower() in {"1", "true", "yes"}
-        if parsed.scheme == "http" and not local and not allow_http:
-            raise ConfigurationError("Utilisez HTTPS à distance ; HTTP explicite requiert NOC_ALLOW_INSECURE_HTTP=true.")
+        if parsed.scheme == "http" and not private_transport and not allow_http:
+            raise ConfigurationError("HTTP est réservé au loopback ou à Tailscale ; utilisez HTTPS ailleurs ou NOC_ALLOW_INSECURE_HTTP=true.")
         names = tuple(name.strip() for name in os.environ.get("NOC_VPS_SERVICES", "").split(",") if name.strip())
         if len(names) > 16 or any(len(name) > 128 or not SERVICE_PATTERN.fullmatch(name) for name in names):
             raise ConfigurationError("NOC_VPS_SERVICES accepte au plus 16 noms systemd valides de 128 caractères.")
@@ -82,7 +85,7 @@ class CpuSampler:
         self.previous: tuple[int, int] | None = None
 
     def sample(self) -> float:
-        fields = Path("/proc/stat").read_text(encoding="ascii").splitlines()[0].split()
+        fields = Path("/proc/stat").read_text(encoding="ascii").partition("\n")[0].split()
         if not fields or fields[0] != "cpu" or len(fields) < 5:
             raise OSError("Statistiques CPU indisponibles.")
         values = [int(value) for value in fields[1:9]]

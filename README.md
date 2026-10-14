@@ -145,7 +145,15 @@ unset NOC_ADMIN_TOKEN
 
 `vps_agent.py` utilise exclusivement la bibliothèque standard Python. Il lit `/proc/stat` et `/proc/meminfo`, mesure le disque racine et vérifie les unités systemd configurées. Au plus 16 noms de services de 128 caractères sont acceptés. Les sondes systemd durent au plus une seconde et sont exécutées avec au plus quatre threads ; le POST a un timeout de trois secondes et au plus deux tentatives. Un cycle retardé saute les échéances passées ; aucun cycle ne se chevauche dans un processus. `SIGTERM` et `SIGINT` arrêtent la boucle proprement.
 
-La cible HTTPS doit pointer exactement sur `/api/vps/report`, sans identifiants dans l'URL. La validation TLS reste active et les redirections sont refusées pour éviter de transmettre le jeton à un autre serveur. HTTP est accepté sur loopback ; pour un réseau privé où vous choisissez HTTP distant, définissez explicitement `NOC_ALLOW_INSECURE_HTTP=true`, sachant que le jeton traverse alors ce réseau sans chiffrement. Un tunnel HTTPS vers le Dell permet de conserver son bind local.
+La cible doit pointer exactement sur `/api/vps/report`, sans identifiants dans l'URL. La validation TLS reste active en HTTPS et les redirections sont refusées pour éviter de transmettre le jeton à un autre serveur. HTTP est accepté sur loopback et sur les IPv4 `100.64.0.0/10` utilisées par [Tailscale](https://tailscale.com/docs/concepts/tailscale-ip-addresses). Pour ce dernier cas, les deux machines doivent être reliées par Tailscale et le port du Dell accessible dans le tailnet ; cette plage CGNAT est aussi utilisée par d'autres réseaux et ne prouve pas à elle seule la présence d'un tunnel. Pour toute autre cible HTTP choisie explicitement, définissez `NOC_ALLOW_INSECURE_HTTP=true` ; le transport HTTP seul ne chiffre pas le jeton. Un tunnel HTTPS vers le Dell permet de conserver son bind local.
+
+Exemple de valeur sur le VPS lorsque `100.68.163.14` est l'adresse Tailscale du Dell :
+
+```ini
+NOC_REPORT_URL=http://100.68.163.14:5050/api/vps/report
+```
+
+`NOC_VPS_TOKEN` doit avoir exactement la même valeur privée que dans `/etc/noc-dashboard.env` sur le Dell ; saisissez-la avec la procédure ci-dessous. Le rapport de supervision est un **JSON normal** envoyé par POST avec `x-vps-token`. Le canal Sentinel utilise le même header d'authentification sur `/api/sentinel/incident`, avec une **enveloppe AES-GCM** chiffrée ; les deux formats et endpoints sont distincts.
 
 Depuis le dossier source sur le Dell, copiez l'agent et son unité sur le VPS :
 
@@ -168,13 +176,13 @@ sudo install -o root -g noc-agent -m 0640 "$HOME/vps_agent.py" /opt/noc-agent/vp
 sudo install -o root -g root -m 0644 "$HOME/vps-agent.service" /etc/systemd/system/noc-vps-agent.service
 ```
 
-Pour la première configuration, saisissez l'URL HTTPS réelle et le jeton `NOC_VPS_TOKEN` lu dans la configuration du Dell. La saisie du jeton est masquée :
+Pour la première configuration, saisissez l'URL réelle (HTTPS, ou HTTP sur le tailnet) et le jeton `NOC_VPS_TOKEN` lu dans la configuration du Dell. La saisie du jeton est masquée :
 
 ```bash
 if sudo test -e /etc/noc-vps-agent.env; then
   sudoedit /etc/noc-vps-agent.env
 else
-  read -r -p 'URL HTTPS complète du endpoint /api/vps/report : ' NOC_REPORT_URL
+  read -r -p 'URL complète du endpoint /api/vps/report (HTTPS ou Tailscale) : ' NOC_REPORT_URL
   read -r -s -p 'Jeton VPS du Dell : ' NOC_VPS_TOKEN
   printf '\n'
   read -r -p 'Services séparés par des virgules, ou vide : ' NOC_VPS_SERVICES

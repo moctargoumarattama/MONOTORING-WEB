@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 
@@ -91,7 +92,7 @@ class Settings:
             vps_retention_seconds=_number("NOC_VPS_RETENTION_SECONDS", 86400, 60, 604800),
             max_vps=int(_number("NOC_MAX_VPS", 128, 1, 1024)),
             max_streams=int(_number("NOC_MAX_STREAMS", 32, 1, 128)),
-            admin_phone_number=os.environ.get("ADMIN_PHONE_NUMBER", "212770010264"),
+            admin_phone_number=re.sub(r"\D", "", os.environ.get("ADMIN_PHONE_NUMBER", "212770010264")),
             whatsapp_webhook_token=os.environ.get("NOC_WHATSAPP_WEBHOOK_TOKEN", ""),
             whatsapp_session_id=os.environ.get("NOC_WHATSAPP_SESSION_ID", "1"),
             whatsapp_send_url=os.environ.get("NOC_WHATSAPP_SEND_URL", "http://127.0.0.1:3001/message/send"),

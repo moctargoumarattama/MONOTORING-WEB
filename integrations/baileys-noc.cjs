@@ -98,7 +98,7 @@ function post(url, headers, body, signal, timeoutMs, maximum) {
 /** Attach one isolated messages.upsert listener and return an idempotent detach(). */
 function attachNocWebhook(sock, options = {}) {
   if (!sock || !sock.ev || typeof sock.ev.on !== 'function' || typeof options.downloadMediaMessage !== 'function') throw new BridgeError('configuration_socket');
-  const adminPhone = String(options.adminPhone || process.env.ADMIN_PHONE_NUMBER || '').replace(/^\+/, '');
+  const adminPhone = String(options.adminPhone || process.env.ADMIN_PHONE_NUMBER || '').replace(/\D/g, '');
   const sessionId = String(options.sessionId || process.env.NOC_WHATSAPP_SESSION_ID || '1');
   const token = options.webhookToken || process.env.NOC_WHATSAPP_WEBHOOK_TOKEN || '';
   if (!/^\d{8,15}$/.test(adminPhone) || !/^[A-Za-z0-9_.:-]{1,64}$/.test(sessionId) || !/^[\x21-\x7e]{1,512}$/.test(token)) throw new BridgeError('configuration_identity');
@@ -195,7 +195,7 @@ function attachNocWebhook(sock, options = {}) {
       } }));
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = String(body.length);
-      await post(new URL('/api/voice/webhook', base), headers, body, signal, timeoutMs, maximum);
+      await post(new URL('/api/whatsapp/webhook', base), headers, body, signal, timeoutMs, maximum);
     }
   }
 

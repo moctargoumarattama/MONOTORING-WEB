@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tools.deploy_dashboard_update import MARKER, code_mask, patch_send_alias, restart_and_verify
+from tools.deploy_dashboard_update import MARKER, code_mask, gateway_environment, patch_send_alias, restart_and_verify
 
 
 class OutgoingDeployTests(unittest.TestCase):
@@ -57,6 +57,35 @@ class OutgoingDeployTests(unittest.TestCase):
             restart_and_verify('private-mock-secret')
         self.assertIn((('restart', 'noc-dashboard.service', 'klasora-whatsapp.service'), {}), command.call_args_list)
         alias.assert_called_once_with('private-mock-secret')
+
+    def test_gateway_config_is_complete_on_creation_and_preserves_unrelated_values(self):
+        config = {'ADMIN_PHONE_NUMBER': '+212 770-010-264',
+                  'NOC_WHATSAPP_WEBHOOK_TOKEN': 'private-incoming-test'}
+        for original in ('', 'PORT=3001\nOTHER_SECRET="preserved-test"\nADMIN_PHONE_NUMBER=old\n'):
+            with self.subTest(existing=bool(original)):
+                updated = gateway_environment(original, config, 'private-outgoing-test')
+                self.assertIn('ADMIN_PHONE_NUMBER="212770010264"', updated)
+                self.assertIn('NOC_WHATSAPP_WEBHOOK_TOKEN="private-incoming-test"', updated)
+                self.assertIn('NOC_GATEWAY_SECRET="private-outgoing-test"', updated)
+                if original:
+                    self.assertIn('PORT=3001\nOTHER_SECRET="preserved-test"', updated)
+                self.assertEqual(gateway_environment(updated, config, 'private-outgoing-test'), updated)
+
+    def test_explicitly_empty_admin_disables_relay_without_blocking_deployment(self):
+        updated = gateway_environment('ADMIN_PHONE_NUMBER=212770010264\nPORT=3001\n',
+                                      {'ADMIN_PHONE_NUMBER': ''}, 'private-outgoing-test')
+        self.assertEqual(updated.count('ADMIN_PHONE_NUMBER='), 1)
+        self.assertIn('ADMIN_PHONE_NUMBER=""', updated)
+        self.assertIn('PORT=3001', updated)
+
+    def test_configured_incoming_relay_is_checked_after_restart(self):
+        with patch('tools.deploy_dashboard_update.systemctl', return_value=SimpleNamespace(returncode=0)), \
+             patch('tools.deploy_dashboard_update.http', return_value={'status': 'ok'}), \
+             patch('tools.deploy_dashboard_update.alias_available', return_value=True), \
+             patch('tools.deploy_dashboard_update.relay_ready', side_effect=[False, True]) as relay, \
+             patch('tools.deploy_dashboard_update.time.sleep'):
+            restart_and_verify('private-mock-secret', require_relay=True)
+        self.assertEqual(relay.call_count, 2)
 
     def test_generated_alias_runs_with_lazy_sessions_and_keeps_legacy_route(self):
         project = Path(__file__).resolve().parents[1]

@@ -105,3 +105,13 @@ Vérification réelle dans Chrome avec un backend de test et le véritable modul
 Les écritures privilégiées et redémarrages de `deploy_dashboard_update.py` restent à effectuer sur Ubuntu. Le checkout local contient les fichiers testés ; la disponibilité sur le Dell dépend de l'exécution de la commande de mise à jour documentée dans `MODULES.md`.
 
 Validation finale de cette version : **167 tests Python et 33 tests Node réussis**. Syntaxe Bash/Python/JavaScript et absence d'erreurs de patch vérifiées. Aucun nouveau paquet Python ou Node requis pour cette mise à jour.
+
+## Numéro administrateur et rapports VPS — 14 octobre 2026
+
+La configuration Python et le bridge Baileys suppriment tous les caractères non numériques du numéro administrateur configuré. Les tests HTTP du bridge acceptent texte et audio avec une option `+212 770-010-264` ou la variable `ADMIN_PHONE_NUMBER=+212770010264`, et refusent les autres expéditeurs, groupes, messages sortants et LID non associés. Le texte utilise `/api/whatsapp/webhook`, l'audio conserve `/api/voice/process`. Le déploiement copie aussi le bridge réellement importé dans `/usr/local/lib/noc-integrations` et synchronise le numéro normalisé et le secret entrant configuré dans l'environnement privé de la passerelle. Les tests couvrent la création de ce fichier, la préservation de ses autres valeurs et un numéro explicitement vide. Si le relais installé est configuré, sa disponibilité est vérifiée dans les logs de la nouvelle invocation systemd avant d'annoncer la réussite.
+
+Les tests API partent de `Settings.from_env()` : `NOC_VPS_TOKEN` autorise le JSON de supervision sur `/api/vps/report` et l'enveloppe JSON chiffrée Sentinel sur `/api/sentinel/incident` avec `x-vps-token`. Un jeton vide, absent ou incorrect ne stocke aucun rapport. Les routes existantes respectaient déjà ce contrat ; elles n'ont pas été modifiées.
+
+L'agent VPS accepte directement la cible HTTP Tailscale du Dell et garde HTTPS ou une autorisation HTTP explicite pour les autres adresses distantes. Les 22 tests de l'agent vérifient notamment les métriques Linux contre le schéma backend, un envoi HTTP local réel avec le bon header, le refus des redirections, les reprises limitées et le mode `--once`. Un `/proc/stat` vide produit désormais une erreur contrôlée. Le README documente les configurations systemd et cron.
+
+Validation finale : **197 tests Python et 36 tests Node réussis**, compilation des fichiers Python modifiés et `git diff --check` réussis. Aucune dépendance supplémentaire. Les déploiements et redémarrages systemd sur le Dell/VPS restent à effectuer ; aucun message WhatsApp réel ni service de production n'a été exécuté pendant ces tests.

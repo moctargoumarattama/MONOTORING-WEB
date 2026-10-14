@@ -25,10 +25,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import Settings
 from tools.repair_whatsapp_contract import (Change, checked_file, http, read_env,
-                                           systemctl, update_env, write_atomic)
+                                           relay_ready, systemctl, update_env, write_atomic)
 
 MARKER = "NOC_WHATSAPP_SEND_ALIAS_V1"
 MODULE = Path("/usr/local/lib/noc-integrations/baileys-send-alias.cjs")
+BRIDGE = Path("/usr/local/lib/noc-integrations/baileys-noc.cjs")
 GATEWAY_ENV = Path("/etc/klasora-whatsapp-noc.env")
 DROP_IN = Path("/etc/systemd/system/klasora-whatsapp.service.d/99-noc-whatsapp-relay.conf")
 
@@ -129,7 +130,28 @@ def alias_available(secret: str) -> bool:
         return error.code in {400, 422}
 
 
-def restart_and_verify(secret: str) -> None:
+def gateway_environment(original: str, config: dict[str, str], secret: str) -> str:
+    """Synchroniser les valeurs NOC sans remplacer les autres réglages gateway."""
+    phone = re.sub(r'\D', '', config.get('ADMIN_PHONE_NUMBER', '212770010264'))
+    values = {'NOC_GATEWAY_SECRET': secret,
+              'NOC_WHATSAPP_SESSION_ID': config.get('NOC_WHATSAPP_SESSION_ID', '1')}
+    if phone:
+        values['ADMIN_PHONE_NUMBER'] = phone
+    token = config.get('NOC_WHATSAPP_WEBHOOK_TOKEN', '')
+    if token:
+        if not re.fullmatch(r'[!-~]{1,512}', token):
+            raise ValueError('NOC_WHATSAPP_WEBHOOK_TOKEN invalide ; aucune modification')
+        values['NOC_WHATSAPP_WEBHOOK_TOKEN'] = token
+    updated = update_env(original, values)
+    if not phone:
+        # Une valeur vide désactive explicitement les commandes ; ne pas garder
+        # un ancien numéro ni élargir update_env aux secrets vides.
+        updated = '\n'.join(line for line in updated.splitlines()
+                            if not re.match(r'\s*ADMIN_PHONE_NUMBER\s*=', line)) + '\nADMIN_PHONE_NUMBER=""\n'
+    return updated
+
+
+def restart_and_verify(secret: str, *, require_relay: bool = False) -> None:
     # Nécessaire aussi si git pull a déjà remplacé les sources sous /opt.
     systemctl('daemon-reload')
     systemctl('restart', 'noc-dashboard.service', 'klasora-whatsapp.service')
@@ -137,12 +159,13 @@ def restart_and_verify(secret: str) -> None:
         try:
             if http('/api/health').get('status') == 'ok' and alias_available(secret) and all(
                 systemctl('is-active', '--quiet', unit, check=False).returncode == 0
-                for unit in ('noc-dashboard.service', 'klasora-whatsapp.service')):
+                for unit in ('noc-dashboard.service', 'klasora-whatsapp.service')) and (
+                    not require_relay or relay_ready()):
                 return
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
         time.sleep(0.5)
-    raise ValueError('NOC ou alias sortant indisponible après redémarrage')
+    raise ValueError('NOC, alias sortant ou relais entrant requis indisponible après redémarrage')
 
 
 def main() -> int:
@@ -160,23 +183,27 @@ def main() -> int:
     if info.st_uid != 0 or info.st_mode & 0o022:
         raise ValueError('La configuration NOC doit appartenir à root et ne pas être modifiable par groupe/autres')
     config = read_env(env_path)
+    admin_phone = re.sub(r'\D', '', config.get('ADMIN_PHONE_NUMBER', '212770010264'))
     secret = config.get('NOC_GATEWAY_SECRET', Settings.__dataclass_fields__['gateway_secret'].default)
     if not re.fullmatch(r'[!-~]{1,512}', secret):
         raise ValueError('NOC_GATEWAY_SECRET vide ou invalide ; aucune modification')
     package_json = server.parent / 'package.json'
     esm = json.loads(checked_file(package_json)).get('type') == 'module' if package_json.exists() else False
     changed_server = patch_send_alias(checked_file(server), esm=esm)
+    require_relay = ('NOC_GATEWAY_RELAY_V2' in changed_server and
+                     bool(admin_phone and config.get('NOC_WHATSAPP_WEBHOOK_TOKEN')))
     changes = [Change(app / relative, checked_file(source / relative)) for relative in (
         'config.py', 'collector.py', 'main.py', 'whatsapp.py', 'static/index.html',
-        'integrations/baileys-send-alias.cjs', 'tools/deploy_dashboard_update.py', 'tools/repair_whatsapp_contract.py')]
+        'integrations/baileys-send-alias.cjs', 'integrations/baileys-noc.cjs',
+        'vps_agent.py', 'vps-agent.service', 'tools/deploy_dashboard_update.py', 'tools/repair_whatsapp_contract.py')]
     changes += [Change(server, changed_server), Change(MODULE, checked_file(source / 'integrations/baileys-send-alias.cjs')),
+                Change(BRIDGE, checked_file(source / 'integrations/baileys-noc.cjs')),
                 Change(env_path, update_env(env_text, {
                     'NOC_WHATSAPP_SEND_URL': 'http://127.0.0.1:3001/message/send',
                     'NOC_WHATSAPP_SEND_TO_FIELD': 'to', 'NOC_WHATSAPP_SEND_TEXT_FIELD': 'text',
                     'NOC_WHATSAPP_SEND_TIMEOUT': '10'})),
-                Change(GATEWAY_ENV, update_env(checked_file(GATEWAY_ENV) if GATEWAY_ENV.exists() else '', {
-                    'NOC_GATEWAY_SECRET': secret,
-                    'NOC_WHATSAPP_SESSION_ID': config.get('NOC_WHATSAPP_SESSION_ID', '1')}), private=True),
+                Change(GATEWAY_ENV, gateway_environment(
+                    checked_file(GATEWAY_ENV) if GATEWAY_ENV.exists() else '', config, secret), private=True),
                 Change(DROP_IN, '# NOC_GATEWAY_RELAY_V2\n[Service]\nEnvironmentFile=/etc/klasora-whatsapp-noc.env\n')]
     if DROP_IN.exists() and 'NOC_GATEWAY_RELAY_V2' not in checked_file(DROP_IN):
         raise ValueError('Override gateway personnalisé conservé ; modification automatique refusée')
@@ -231,9 +258,9 @@ def main() -> int:
             if gateway_group:
                 account += ['-g', gateway_group]
             subprocess.run(account + ['--', 'node', '--input-type=module', '-'],
-                input='await import(' + json.dumps(str(MODULE)) + ');',
+                input='\n'.join('await import(' + json.dumps(str(module)) + ');' for module in (MODULE, BRIDGE)),
                 text=True, capture_output=True, check=True, timeout=10)
-            restart_and_verify(secret)
+            restart_and_verify(secret, require_relay=require_relay)
         except BaseException:
             for path in reversed(written):
                 if originals[path] is None:
@@ -250,7 +277,7 @@ def main() -> int:
             raise ValueError('Mise à jour annulée : fichiers restaurés. Sauvegarde : ' + str(backup)) from None
         print('Mise à jour appliquée. Sauvegarde :', backup)
     else:
-        restart_and_verify(secret)
+        restart_and_verify(secret, require_relay=require_relay)
     if not alias_available(secret):
         raise ValueError('Alias non disponible : vérifier le journal de la passerelle')
     print('NOC disponible, alias /message/send actif, actions web directes sans saisie de jeton.')

@@ -43,7 +43,7 @@ test('text and decrypted audio reach real HTTP mock without disturbing other gat
   f.sock.ev.on('messages.upsert', () => originalCalls++);
   f.sock.ev.emit('messages.upsert', event([incoming('TEXT_1', { conversation: 'statut' }), incoming('AUDIO_1', { audioMessage: { mimetype: 'audio/ogg; codecs=opus', seconds: 2 } })]));
   await until(() => f.received.length === 2);
-  assert.equal(f.received[0].path, '/api/voice/webhook');
+  assert.equal(f.received[0].path, '/api/whatsapp/webhook');
   assert.equal(JSON.parse(f.received[0].body).data.text, 'statut');
   assert.equal(f.received[1].path, '/api/voice/process');
   assert.equal(f.received[1].headers['x-gateway-secret'], 'private-mock-token');
@@ -111,6 +111,62 @@ test('public plaintext targets and invalid credentials fail before attaching', (
   assert.throws(() => attachNocWebhook(sock, { ...config, baseUrl: 'http://8.8.8.8:5050' }), /configuration_transport/);
   assert.throws(() => attachNocWebhook(sock, { ...config, webhookToken: 'bad\r\nheader' }), /configuration_identity/);
   assert.equal(sock.ev.listenerCount('messages.upsert'), 0);
+});
+
+test('formatted administrator option accepts exact PN text and decrypted audio over HTTP', async t => {
+  let downloads = 0;
+  const f = await fixture(t, {
+    adminPhone: '+212 770-010-264',
+    downloadMediaMessage: async () => { downloads++; return Readable.from([Buffer.from('OggS-formatted-admin')]); },
+  });
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('FORMATTED_TEXT', { conversation: 'statut' }, { remoteJid: '212770010264:2@s.whatsapp.net' }),
+    incoming('FORMATTED_AUDIO', { audioMessage: { mimetype: 'audio/ogg' } }),
+  ]));
+  await until(() => f.received.length === 2);
+  assert.deepEqual(f.received.map(row => row.path), ['/api/whatsapp/webhook', '/api/voice/process']);
+  assert.ok(f.received.every(row => row.headers['x-whatsapp-from'] === '212770010264@s.whatsapp.net'));
+  assert.equal(JSON.parse(f.received[0].body).data.from, '212770010264@s.whatsapp.net');
+  assert.equal(JSON.parse(f.received[0].body).data.id, 'FORMATTED_TEXT');
+  assert.equal(f.received[1].headers['x-message-id'], 'FORMATTED_AUDIO');
+  assert.equal(f.received[1].body.toString(), 'OggS-formatted-admin');
+  assert.equal(downloads, 1);
+});
+
+test('administrator env with plus sign works for text and audio and is restored immediately', async t => {
+  const previous = process.env.ADMIN_PHONE_NUMBER;
+  let f;
+  try {
+    process.env.ADMIN_PHONE_NUMBER = '+212770010264';
+    f = await fixture(t, { adminPhone: undefined });
+  } finally {
+    if (previous === undefined) delete process.env.ADMIN_PHONE_NUMBER;
+    else process.env.ADMIN_PHONE_NUMBER = previous;
+  }
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('ENV_TEXT', { conversation: 'statut' }),
+    incoming('ENV_AUDIO', { audioMessage: { mimetype: 'audio/ogg; codecs=opus' } }),
+  ]));
+  await until(() => f.received.length === 2);
+  assert.deepEqual(f.received.map(row => row.path), ['/api/whatsapp/webhook', '/api/voice/process']);
+  assert.ok(f.received.every(row => row.headers['x-whatsapp-from'] === '212770010264@s.whatsapp.net'));
+  assert.equal(f.received[1].body.toString(), 'OggS-test');
+});
+
+test('formatting administrator config never authorizes a different PN or LID', async t => {
+  const f = await fixture(t, {
+    adminPhone: '+212 770-010-264',
+    downloadMediaMessage: async () => assert.fail('another number must not download'),
+  });
+  f.sock.ev.emit('messages.upsert', event([
+    incoming('FORMATTED_OTHER_TEXT', { conversation: 'statut' }, { remoteJid: '212770010265:2@s.whatsapp.net' }),
+    incoming('FORMATTED_OTHER_AUDIO', { audioMessage: { mimetype: 'audio/ogg' } }, { remoteJid: '212770010265@s.whatsapp.net' }),
+    incoming('FORMATTED_GROUP', { conversation: 'statut' }, { remoteJid: '212770010264@g.us' }),
+    incoming('FORMATTED_FROMME', { conversation: 'statut' }, { fromMe: true }),
+    incoming('FORMATTED_FAKE_LID', { conversation: 'statut' }, { remoteJid: '212770010264@lid', remoteJidAlt: '212770010265@s.whatsapp.net' }),
+  ]));
+  await sleep(100);
+  assert.equal(f.received.length, 0);
 });
 
 test('an unresolved Baileys download cannot accumulate orphan downloads', async t => {
