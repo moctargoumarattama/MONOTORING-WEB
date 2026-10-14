@@ -49,6 +49,7 @@ class APITests(unittest.TestCase):
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch("main.collector.Collector.start", new=AsyncMock()))
         self.stack.enter_context(patch("main.collector.Collector.close", new=AsyncMock()))
+        self.stack.enter_context(patch("main.WhatsAppController.refresh_voice_readiness", new=AsyncMock()))
         self.stack.enter_context(patch("main.collector.Collector.collect", new=AsyncMock(
             side_effect=lambda: copy.deepcopy(local_snapshot()))))
         self.settings = Settings(vps_token=VPS_TOKEN,

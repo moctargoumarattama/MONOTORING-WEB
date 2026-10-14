@@ -47,6 +47,10 @@ def snapshot():
 
 class SentinelAPITests(unittest.TestCase):
     def setUp(self):
+        # Les tests Sentinel ne lancent pas d'import natif Whisper à chaque API.
+        readiness = patch("main.WhatsAppController.refresh_voice_readiness", new=AsyncMock())
+        readiness.start()
+        self.addCleanup(readiness.stop)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         directory = self.stack.enter_context(tempfile.TemporaryDirectory())

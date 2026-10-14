@@ -31,7 +31,7 @@ sudo systemctl status noc-dashboard.service --no-pager
 curl --fail --silent --show-error http://127.0.0.1:5050/api/health
 ```
 
-L'installateur crée le compte système `noc-dashboard`, un venv isolé et `/etc/noc-dashboard.env`. Il génère deux jetons indépendants pour les actions administrateur et les rapports VPS, avec `secrets.token_hex(32)`, sans les afficher. Le code appartient à `root` ; le service peut le lire mais pas le modifier. Le fichier de configuration est en `root:noc-dashboard`, mode `0640`.
+Pour une installation neuve, l'installateur crée le compte système `noc-dashboard`, un venv isolé et `/etc/noc-dashboard.env`. Sur une installation existante, il conserve le compte non-root et son groupe, notamment `moctar`, et adapte les droits et sudoers sans changer le compte de service. Une ancienne unité utilisant root est refusée, sans migration implicite. Il génère deux jetons indépendants pour les actions administrateur et les rapports VPS, avec `secrets.token_hex(32)`, sans les afficher. Le code appartient à `root` ; le service peut le lire mais pas le modifier. La configuration appartient à `root` et au groupe réel du service, mode `0640`.
 
 Une seconde exécution conserve le venv et la configuration existants. Les fichiers remplacés sont sauvegardés dans un dossier privé sous `/var/backups/noc-dashboard`. Le script fonctionne aussi lorsqu'il est lancé directement depuis `/opt/noc-dashboard`, sans recopier les fichiers sur eux-mêmes. Aucun paquet Python global n'est installé. L'installateur vérifie la syntaxe du code, la règle sudoers, l'unité systemd et la réponse réelle de `/api/health`.
 
@@ -59,8 +59,12 @@ Modifiez la configuration avec `sudoedit /etc/noc-dashboard.env`, puis appliquez
 | `NOC_ADMIN_TOKEN` | Jeton distinct pour le header `x-admin-token` des redémarrages |
 | `NOC_VPS_TOKEN` | Jeton distinct pour le header `x-vps-token` des agents distants |
 | `NOC_ENABLE_RESTART` | `true` ; les actions nécessitent aussi Linux et un jeton administrateur |
+| `NOC_VOICE_ENABLED` | `true`, active le canal vocal configuré |
+| `NOC_WHISPER_MODEL` | `tiny`, modèle multilingue local |
+| `NOC_WHISPER_MODEL_PATH` | `/opt/noc-dashboard/models/whisper`, anciens chemins explicites conservés |
+| `NOC_WHATSAPP_WEBHOOK_TOKEN` | Secret privé entrant, utilisé dans `X-Gateway-Secret` pour texte/audio |
 
-Le secret WhatsApp est lu depuis l'environnement et envoyé uniquement à `http://127.0.0.1:3001/session/1/status`. S'il a été changé sur la passerelle, reportez la nouvelle valeur dans cette configuration. Les jetons ne sont inclus ni dans les snapshots, ni dans les événements SSE.
+Le secret WhatsApp est lu depuis l'environnement pour le statut local sur `http://127.0.0.1:3001/session/1/status` et les réponses via `/message/send`. Les messages entrants utilisent le secret privé distinct `NOC_WHATSAPP_WEBHOOK_TOKEN`. Si le secret de la passerelle a changé, reportez sa valeur dans la configuration. Les jetons ne sont inclus ni dans les snapshots, ni dans les événements SSE.
 
 La consultation de `/`, `/api/health`, `/api/snapshot` et `/api/stream` est directe, sans jeton ni cookie. Les anciennes variables `NOC_VIEW_TOKEN` et `NOC_COOKIE_SECURE`, si elles figurent encore dans une configuration existante, sont ignorées ; vous pouvez les laisser en place. Sans `NOC_ADMIN_TOKEN`, les redémarrages sont désactivés. Sans `NOC_VPS_TOKEN`, les rapports VPS sont désactivés.
 
@@ -98,8 +102,11 @@ curl --silent --show-error --no-buffer --max-time 7 \
   http://127.0.0.1:5050/api/stream || test "$?" -eq 28
 
 # Rapport VPS réel depuis le Dell ; utilise /proc et le système de fichiers.
+NOC_SERVICE_USER="$(sudo systemctl show noc-dashboard.service --property=User --value)"
+NOC_SERVICE_GROUP="$(sudo systemctl show noc-dashboard.service --property=Group --value)"
+if test -z "$NOC_SERVICE_GROUP"; then NOC_SERVICE_GROUP="$(id -gn "$NOC_SERVICE_USER")"; fi
 sudo systemd-run --quiet --wait --pipe --collect --unit=noc-local-agent-check \
-  --property=User=noc-dashboard --property=Group=noc-dashboard \
+  --property=User="$NOC_SERVICE_USER" --property=Group="$NOC_SERVICE_GROUP" \
   --property=EnvironmentFile=/etc/noc-dashboard.env \
   --setenv=NOC_REPORT_URL=http://127.0.0.1:5050/api/vps/report \
   --setenv=NOC_VPS_SERVICES=cloudflared \
@@ -255,7 +262,8 @@ curl --fail --silent --show-error \
 sudo journalctl -u noc-dashboard.service -n 80 --no-pager
 sudo ss -ltnp 'sport = :5050'
 sudo visudo -cf /etc/sudoers.d/noc-dashboard
-sudo -l -U noc-dashboard
+NOC_SERVICE_USER="$(sudo systemctl show noc-dashboard.service --property=User --value)"
+sudo -l -U "$NOC_SERVICE_USER"
 sudo systemctl is-active merca-market.service klasora.service babamarket.service moc-mal.service cloudflared.service klasora-whatsapp.service
 ```
 
@@ -263,6 +271,10 @@ Une erreur `401` sur un rapport VPS ou une action de redémarrage exige le jeton
 
 Le frontend est autonome : CSS, icônes SVG et graphiques sont intégrés au HTML, sans dépendance CDN ni compilation. Les accès réseau aux applications du Dell restent limités à loopback. L'installation initiale reste accessible uniquement localement ou via tunnel ; les jetons administrateur et VPS protègent toujours les écritures.
 
+Le bouton **Agrandir** du journal ouvre une fenêtre modale avec les 200 derniers événements conservés, leurs messages complets, identifiants, niveaux et dates/heures. Le flux reste en direct ; le défilement automatique peut être mis en pause. Fermez avec **Fermer** ou **Échap**. Cette présentation conserve la hauteur du panneau compact et ne nécessite aucun changement du backend.
+
 ## Modules WhatsApp vocal et Sentinel
 
 Cette version ajoute les commandes WhatsApp texte/vocales et le radar Sentinel VPS en direct. Suivez [MODULES.md](MODULES.md) pour la mise à jour du Dell, le modèle vocal local, la sauvegarde BabaMarket et l'installation du service `sentinel-vps.service` sur le VPS. La mise à jour de ces modules nécessite le projet complet et ses nouvelles dépendances : l'ancienne procédure limitée à trois fichiers ne suffit pas.
+
+Le correctif vocal ajoute le bridge [Baileys](integrations/baileys-noc.cjs), qui déchiffre les notes via la bibliothèque déjà installée dans la passerelle et envoie leur flux brut sur `/api/voice/process`. Le texte passe par `/api/voice/webhook`. `/api/overview` et `/events` sont les alias du snapshot et du SSE ; `/api/voice/status` fournit un diagnostic du modèle et des permissions. `/api/voice/simulate`, protégé par `X-Admin-Token`, reste toujours une simulation sans redémarrage ni réponse WhatsApp. La [procédure ciblée dans MODULES.md](MODULES.md#1-mettre-à-jour-le-dell) conserve les comptes actuels, notamment `moctar` lorsqu'il est déjà le User du NOC ; `noc-dashboard` reste le défaut pour une nouvelle installation.

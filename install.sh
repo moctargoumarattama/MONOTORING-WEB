@@ -4,18 +4,23 @@ set -Eeuo pipefail
 umask 027
 
 readonly APP_DIR=/opt/noc-dashboard
-readonly APP_USER=noc-dashboard
+APP_USER=noc-dashboard
+APP_GROUP=noc-dashboard
 readonly ENV_FILE=/etc/noc-dashboard.env
 readonly UNIT_FILE=/etc/systemd/system/noc-dashboard.service
 readonly SUDOERS_FILE=/etc/sudoers.d/noc-dashboard
 readonly SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 BACKUP_DIR=""
 STAGED_SUDOERS=""
+STAGED_UNIT=""
 
 fail() { printf 'Erreur : %s\n' "$*" >&2; exit 1; }
 cleanup() {
     if [[ -n "$STAGED_SUDOERS" && -f "$STAGED_SUDOERS" ]]; then
         rm -f -- "$STAGED_SUDOERS"
+    fi
+    if [[ -n "$STAGED_UNIT" && -f "$STAGED_UNIT" ]]; then
+        rm -f -- "$STAGED_UNIT"
     fi
 }
 trap cleanup EXIT
@@ -31,7 +36,30 @@ done
 python3.11 -c 'import sys, venv; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
     || fail "Python 3.11 avec le module venv est requis."
 
-PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service README.md MODULES.md .gitignore)
+# Respecter le compte d'une installation existante avant toute modification.
+EXISTING_UNIT=false
+UNIT_LOAD_STATE="$(systemctl show noc-dashboard.service --property=LoadState --value)" \
+    || fail "impossible de lire l'unité NOC existante."
+if [[ -n "$UNIT_LOAD_STATE" && "$UNIT_LOAD_STATE" != not-found ]]; then
+    EXISTING_UNIT=true
+    APP_USER="$(systemctl show noc-dashboard.service --property=User --value)" \
+        || fail "impossible de lire le compte du NOC."
+    APP_GROUP="$(systemctl show noc-dashboard.service --property=Group --value)" \
+        || fail "impossible de lire le groupe du NOC."
+    [[ -n "$APP_USER" && "$APP_USER" != root ]] \
+        || fail "l'unité NOC existante utilise root ; aucune migration implicite de compte n'est autorisée."
+    [[ "$APP_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_.-]{0,31}\$?$ ]] \
+        || fail "nom de compte NOC existant non pris en charge."
+    getent passwd "$APP_USER" >/dev/null || fail "le compte NOC existant est absent."
+    [[ "$(id -u "$APP_USER")" -ne 0 ]] || fail "le compte NOC existant ne peut pas avoir uid 0."
+    if [[ -z "$APP_GROUP" ]]; then APP_GROUP="$(id -gn "$APP_USER")"; fi
+    [[ "$APP_GROUP" =~ ^[a-zA-Z_][a-zA-Z0-9_.-]{0,31}\$?$ ]] \
+        || fail "nom de groupe NOC existant non pris en charge."
+    getent group "$APP_GROUP" >/dev/null || fail "le groupe NOC existant est absent."
+fi
+readonly APP_USER APP_GROUP
+
+PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service integrations/baileys-noc.cjs README.md MODULES.md .gitignore)
 for relative in "${PROJECT_FILES[@]}" static/index.html; do
     [[ -f "$SOURCE_DIR/$relative" && ! -L "$SOURCE_DIR/$relative" ]] || fail "fichier source manquant ou lien symbolique : $relative."
 done
@@ -56,14 +84,14 @@ assert_destination "$ENV_FILE"
 assert_destination "$UNIT_FILE"
 assert_destination "$SUDOERS_FILE"
 [[ ! -e "$ENV_FILE" || -f "$ENV_FILE" ]] || fail "la configuration existante doit être un fichier ordinaire."
-if ! getent group "$APP_USER" >/dev/null; then
-    groupadd --system "$APP_USER"
+if [[ "$EXISTING_UNIT" == false ]]; then
+    if ! getent group "$APP_GROUP" >/dev/null; then groupadd --system "$APP_GROUP"; fi
+    if ! id "$APP_USER" >/dev/null 2>&1; then
+        useradd --system --gid "$APP_GROUP" --home-dir "$APP_DIR" --no-create-home --shell /usr/sbin/nologin "$APP_USER"
+    fi
 fi
-if ! id "$APP_USER" >/dev/null 2>&1; then
-    useradd --system --gid "$APP_USER" --home-dir "$APP_DIR" --no-create-home --shell /usr/sbin/nologin "$APP_USER"
-fi
-[[ "$(id -u "$APP_USER")" -ne 0 ]] || fail "le compte noc-dashboard ne peut pas être root."
-install -d -o root -g "$APP_USER" -m 0750 "$APP_DIR"
+[[ "$(id -u "$APP_USER")" -ne 0 ]] || fail "le compte NOC ne peut pas être root."
+install -d -o root -g "$APP_GROUP" -m 0750 "$APP_DIR"
 
 backup_if_changed() {
     local source="$1" destination="$2" backup_target
@@ -83,23 +111,23 @@ backup_if_changed() {
 copy_project_file() {
     local relative="$1" source="$SOURCE_DIR/$1" destination="$APP_DIR/$1" mode=0640
     assert_destination "$destination"
-    install -d -o root -g "$APP_USER" -m 0750 "$(dirname -- "$destination")"
+    install -d -o root -g "$APP_GROUP" -m 0750 "$(dirname -- "$destination")"
     if [[ "$relative" == *.sh || "$relative" == vps_agent.py || "$relative" == vps_sentinel.py ]]; then mode=0750; fi
     if [[ "$source" != "$destination" ]]; then
         backup_if_changed "$source" "$destination"
         if ! [[ -f "$destination" ]] || ! cmp -s -- "$source" "$destination"; then
-            install -o root -g "$APP_USER" -m "$mode" "$source" "$destination"
+            install -o root -g "$APP_GROUP" -m "$mode" "$source" "$destination"
         fi
     fi
-    chown root:"$APP_USER" "$destination"
+    chown root:"$APP_GROUP" "$destination"
     chmod "$mode" "$destination"
 }
 
 # Le fichier existant reste intact : aucune rotation implicite des secrets.
 if [[ ! -e "$ENV_FILE" ]]; then
-    install -o root -g "$APP_USER" -m 0640 /dev/null "$ENV_FILE"
+    install -o root -g "$APP_GROUP" -m 0640 /dev/null "$ENV_FILE"
     {
-        printf '%s\n' '# Configuration NOC, lisible seulement par root et noc-dashboard.'
+        printf '%s\n' '# Configuration NOC, lisible seulement par root et le groupe du service.'
         printf '%s\n' 'NOC_HOST=127.0.0.1' 'NOC_PORT=5050' 'NOC_INTERVAL_SECONDS=2' 'NOC_VPS_STALE_SECONDS=20'
         printf '%s\n' 'NOC_BACKUP_PATH=/mnt/babamarket-backups' 'NOC_ENABLE_RESTART=true'
         printf 'NOC_GATEWAY_SECRET=%s\n' "${NOC_GATEWAY_SECRET:-secret-gateway-local-klasora-2024}"
@@ -107,7 +135,7 @@ if [[ ! -e "$ENV_FILE" ]]; then
         printf 'NOC_VPS_TOKEN=%s\n' "$(python3.11 -c 'import secrets; print(secrets.token_hex(32))')"
     } > "$ENV_FILE"
 fi
-chown root:"$APP_USER" "$ENV_FILE"
+chown root:"$APP_GROUP" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 
 # Ajouter uniquement les nouvelles clés ; ne jamais remplacer un secret existant.
@@ -123,7 +151,9 @@ defaults = {
     "NOC_WHATSAPP_WEBHOOK_TOKEN": secrets.token_hex(32),
     "NOC_BACKUP_SCRIPT": "/usr/local/bin/backup-babamarket.sh",
     "NOC_WHISPER_PYTHON": "/opt/noc-dashboard/voice-venv/bin/python",
-    "NOC_WHISPER_MODEL_PATH": "/opt/noc-dashboard/models/whisper-tiny",
+    "NOC_WHISPER_MODEL_PATH": "/opt/noc-dashboard/models/whisper",
+    "NOC_WHISPER_MODEL": "tiny",
+    "NOC_VOICE_ENABLED": "true",
     "NOC_SENTINEL_STATE_PATH": "/var/lib/noc-dashboard/sentinel-counters.json",
 }
 missing = [f"{key}={value}" for key, value in defaults.items() if key not in keys]
@@ -142,7 +172,7 @@ fi
 "$APP_DIR/venv/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
     || fail "le venv existant doit utiliser Python 3.11 ; il a été conservé."
 "$APP_DIR/venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r "$SOURCE_DIR/requirements.txt"
-chown -hR root:"$APP_USER" "$APP_DIR/venv"
+chown -hR root:"$APP_GROUP" "$APP_DIR/venv"
 chmod -R go-w "$APP_DIR/venv"
 "$APP_DIR/venv/bin/python" -c 'import fastapi, uvicorn, psutil, httpx, sse_starlette, cryptography'
 
@@ -160,10 +190,10 @@ fi
 
 # Aucune étoile : ces quatre commandes exactes sont les seuls redémarrages autorisés.
 STAGED_SUDOERS="$(mktemp /etc/sudoers.d/.noc-dashboard-XXXXXX)"
-printf '%s\n' \
-    'Defaults:noc-dashboard timestamp_timeout=0' \
-    'noc-dashboard ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block restart merca-market.service, /usr/bin/systemctl --no-block restart klasora.service, /usr/bin/systemctl --no-block restart babamarket.service, /usr/bin/systemctl --no-block restart moc-mal.service, /usr/local/bin/backup-babamarket.sh' \
-    > "$STAGED_SUDOERS"
+{
+    printf 'Defaults:%s timestamp_timeout=0\n' "$APP_USER"
+    printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block restart merca-market.service, /usr/bin/systemctl --no-block restart klasora.service, /usr/bin/systemctl --no-block restart babamarket.service, /usr/bin/systemctl --no-block restart moc-mal.service, /usr/local/bin/backup-babamarket.sh\n' "$APP_USER"
+} > "$STAGED_SUDOERS"
 chmod 0440 "$STAGED_SUDOERS"
 visudo -cf "$STAGED_SUDOERS"
 backup_if_changed "$STAGED_SUDOERS" "$SUDOERS_FILE"
@@ -171,9 +201,23 @@ chown root:root "$STAGED_SUDOERS"
 mv -f -- "$STAGED_SUDOERS" "$SUDOERS_FILE"
 STAGED_SUDOERS=""
 
-systemd-analyze verify "$APP_DIR/noc-dashboard.service"
-backup_if_changed "$APP_DIR/noc-dashboard.service" "$UNIT_FILE"
-install -o root -g root -m 0644 "$APP_DIR/noc-dashboard.service" "$UNIT_FILE"
+STAGED_UNIT="$(mktemp /tmp/noc-dashboard-stage-XXXXXXXX.service)"
+python3.11 - "$APP_DIR/noc-dashboard.service" "$STAGED_UNIT" "$APP_USER" "$APP_GROUP" <<'PY'
+import pathlib
+import re
+import sys
+source, target, user, group = sys.argv[1:]
+text = pathlib.Path(source).read_text(encoding="utf-8")
+for key, value in (("User", user), ("Group", group)):
+    pattern = rf"^{key}=.*$"
+    if len(re.findall(pattern, text, flags=re.MULTILINE)) != 1:
+        raise SystemExit(f"Unité NOC invalide : {key} doit apparaître une seule fois")
+    text = re.sub(pattern, lambda _match: f"{key}={value}", text, flags=re.MULTILINE)
+pathlib.Path(target).write_text(text, encoding="utf-8")
+PY
+systemd-analyze verify "$STAGED_UNIT"
+backup_if_changed "$STAGED_UNIT" "$UNIT_FILE"
+install -o root -g root -m 0644 "$STAGED_UNIT" "$UNIT_FILE"
 systemctl daemon-reload
 if systemctl is-active --quiet noc-dashboard.service; then
     systemctl enable noc-dashboard.service

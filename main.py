@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import shutil
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,7 +24,7 @@ from sse_starlette.sse import EventSourceResponse
 import collector
 from config import RESTART_ALLOWLIST, Settings
 from sentinel import SentinelManager
-from whatsapp import WhatsAppController
+from whatsapp import AUDIO_MIME_TYPES, WhatsAppController, parse_message
 
 LOGGER = logging.getLogger("noc-dashboard")
 BASE_DIR = Path(__file__).resolve().parent
@@ -274,6 +275,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         collecting = bool(last_success and not latest["collector"].get("error") and time.monotonic() - runtime.last_published <= max(10, 3 * settings.interval) and runtime.collect_task and not runtime.collect_task.done())
         return JSONResponse({"status": "ok" if collecting else "starting" if latest is None else "degraded", "collector_ready": collecting, "interval_seconds": settings.interval, "process_id": os.getpid()}, status_code=200 if collecting else 503)
 
+    @application.get("/api/overview")
     @application.get("/api/snapshot")
     async def snapshot():
         runtime: Runtime = application.state.runtime
@@ -281,6 +283,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(503, "Première collecte en cours", headers={"Retry-After": "2"})
         return Response(content=runtime.serialized, media_type="application/json")
 
+    @application.get("/events")
     @application.get("/api/stream")
     async def stream(request: Request):
         runtime: Runtime = application.state.runtime
@@ -331,12 +334,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime: Runtime = application.state.runtime
         return await runtime.restart_service(name)
 
-    @application.post("/api/whatsapp/webhook")
-    async def whatsapp_webhook(request: Request):
+    def require_gateway(request: Request) -> None:
+        same_origin(request)
         if not settings.admin_phone_number or not settings.whatsapp_webhook_token:
-            raise HTTPException(503, "Commandes WhatsApp non configurées")
+            raise HTTPException(503, "Commandes WhatsApp non configurées : ADMIN_PHONE_NUMBER et NOC_WHATSAPP_WEBHOOK_TOKEN requis")
         if not token_matches(request.headers.get("x-gateway-secret"), settings.whatsapp_webhook_token):
             raise HTTPException(403, "Requête non autorisée")
+
+    @application.get("/api/voice/status")
+    async def voice_status():
+        return application.state.runtime.whatsapp.snapshot()
+
+    @application.post("/api/voice/simulate", status_code=202)
+    async def voice_simulate(request: Request):
+        same_origin(request)
+        if not settings.admin_token:
+            raise HTTPException(503, "Simulation non configurée : NOC_ADMIN_TOKEN requis")
+        if not token_matches(request.headers.get("x-admin-token"), settings.admin_token):
+            raise HTTPException(401, "Jeton administrateur incorrect")
+        payload = await limited_json(request, 4096)
+        if not isinstance(payload, dict) or set(payload) != {"text"}:
+            raise HTTPException(422, "Objet JSON attendu : {text: commande}")
+        try:
+            return await application.state.runtime.whatsapp.simulate(payload["text"])
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except asyncio.QueueFull:
+            raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"}) from None
+
+    @application.post("/api/voice/webhook")
+    @application.post("/api/whatsapp/webhook")
+    async def whatsapp_webhook(request: Request):
+        require_gateway(request)
         payload = await limited_json(request, 32768)
         if not isinstance(payload, dict):
             raise HTTPException(422, "Message WhatsApp invalide")
@@ -348,6 +377,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Message WhatsApp invalide") from None
         except asyncio.QueueFull:
             raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"}) from None
+
+    @application.post("/api/voice/process", status_code=202)
+    async def voice_process(request: Request):
+        """Audio déjà déchiffré envoyé par Baileys; jamais un chemin client à lire."""
+        require_gateway(request)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type == "application/json":
+            return await whatsapp_webhook(request)
+        if content_type not in AUDIO_MIME_TYPES | {"application/octet-stream"}:
+            raise HTTPException(415, "Envoyez le fichier audio brut (OGG, Opus, MP3 ou WAV), ou un message JSON")
+        if request.headers.get("content-encoding", "identity").lower() != "identity":
+            raise HTTPException(415, "Audio HTTP compressé interdit")
+        controller = application.state.runtime.whatsapp
+        payload = {"sessionId": request.headers.get("x-session-id", settings.whatsapp_session_id),
+                   "from": request.headers.get("x-whatsapp-from"),
+                   "id": request.headers.get("x-message-id"),
+                   "audio": {"path": "uploaded-audio", "mimetype": "audio/ogg" if content_type == "application/octet-stream" else content_type}}
+        try:
+            parse_message(payload, settings.admin_phone_number)
+            if payload["sessionId"] != settings.whatsapp_session_id:
+                raise PermissionError()
+        except PermissionError:
+            raise HTTPException(403, "Émetteur ou session non autorisé") from None
+        except ValueError:
+            raise HTTPException(422, "Headers X-WhatsApp-From et X-Message-Id valides requis") from None
+        if controller.uploading >= 2 or controller.queue.full():
+            raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"})
+        limit = settings.whatsapp_max_audio_bytes
+        length = request.headers.get("content-length")
+        if length:
+            try:
+                if not 0 < int(length) <= limit:
+                    raise HTTPException(413, "Audio vide ou trop volumineux (8 Mio maximum)")
+            except ValueError:
+                raise HTTPException(400, "Content-Length invalide") from None
+        controller.uploading += 1
+        owned_by_worker = False
+        path = None
+        try:
+            descriptor, filename = tempfile.mkstemp(prefix="noc-voice-upload-", suffix=".audio",
+                                                    dir="/tmp" if os.name == "posix" else None)
+            path = Path(filename)
+            with os.fdopen(descriptor, "wb") as outgoing:
+                count = 0
+                async with asyncio.timeout(30):
+                    async for chunk in request.stream():
+                        count += len(chunk)
+                        if count > limit:
+                            raise HTTPException(413, "Audio trop volumineux (8 Mio maximum)")
+                        await asyncio.to_thread(outgoing.write, chunk)
+                if count == 0:
+                    raise HTTPException(422, "Fichier audio vide")
+            result = await controller.accept(payload, uploaded_audio=path)
+            owned_by_worker = result.get("accepted") is True and not result.get("duplicate")
+            return result
+        except PermissionError:
+            raise HTTPException(403, "Émetteur non autorisé") from None
+        except ValueError:
+            raise HTTPException(422, "Message audio invalide") from None
+        except TimeoutError:
+            raise HTTPException(408, "Envoi audio expiré") from None
+        except asyncio.QueueFull:
+            raise HTTPException(429, "File de commandes pleine", headers={"Retry-After": "5"}) from None
+        finally:
+            controller.uploading -= 1
+            if path is not None and not owned_by_worker:
+                path.unlink(missing_ok=True)
 
     @application.post("/api/sentinel/incident")
     async def sentinel_incident(request: Request):

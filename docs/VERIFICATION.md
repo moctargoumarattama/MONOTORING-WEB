@@ -61,3 +61,25 @@ La version actuelle ajoute les routes WhatsApp et Sentinel, une transcription CP
 - Les aperçus `preview.png` et `preview-mobile.png` présentent désormais un scénario de validation : métriques réelles du PC Windows, commandes et incidents de test. Ils ne représentent pas un bannissement de production.
 
 Les commandes de pare-feu et les unités systemd ont été examinées mais ne sont pas exécutables sur ce poste Windows. Aucun pare-feu, script existant ou service applicatif du Dell/VPS n'a été modifié. L'installation Linux et la passerelle réelle restent à appliquer avec le guide.
+
+## Correctif de disponibilité vocale — 14 octobre 2026
+
+L'état `voice.enabled` représente désormais la disponibilité de la transcription, indépendamment du secret WhatsApp. Le diagnostic exécute `voice_transcribe.py --check` dans un processus temporaire : import réel de faster-whisper et ouverture des actifs locaux sous les droits du service, sans chargement des poids ni téléchargement. Le backend conserve un état explicite `checking`, `ready`, `missing_model` ou `disabled`, son motif et le modèle réellement trouvé. Le canal WhatsApp expose séparément `webhook_configured`.
+
+- **131 tests Python réussis**, incluant le diagnostic, les chemins anciens et caches, les permissions, le choix du Python, les uploads authentifiés et bornés, leur nettoyage, les doublons et la simulation sans effets.
+- **8 tests Node réussis** pour le bridge Baileys : flux HTTP réel vers un serveur de test, filtres d'émetteur/session, reprise avec le même ID, limite audio, file bornée, JID alternatifs et téléchargement bloqué sans accumulation.
+- Syntaxe des trois scripts Bash validée avec Git Bash ; dépendances des deux venvs cohérentes avec `pip check`.
+- Le vrai worker tiny CPU/int8 a transcrit la même phrase française depuis **OGG, Opus, MP3 et WAV**. L'API `POST /api/voice/process` a accepté l'OGG brut en **16 ms**, puis publié son résultat après **2,72 secondes**. La réponse est arrivée dans une fausse passerelle locale, sans message WhatsApp réel.
+- L'alias SSE `/events` a transmis les mises à jour pendant l'inférence. Les intervalles de collecte observés sont **2,11 / 1,91 / 1,98 secondes**.
+- Chrome a affiché **PRÊT en vert**, puis le résultat d'une simulation `restart babamarket` soumise depuis le dialog, sans navigation ni rechargement. Le jeton saisi est effacé et aucun redémarrage n'est effectué. Aucun nouveau débordement : document de **744 px** en 1536 × 680, radar et journal de **146 px**, mobile 390 px sans débordement horizontal ni erreur JavaScript.
+- L'installation vocale prépare le chemin standard `/opt/noc-dashboard/models/whisper`, réutilise un modèle local valide avant téléchargement, conserve les anciens actifs et vérifie la lecture sous le véritable utilisateur systemd. Le modèle appartient à `moctar:moctar` si ce compte existe ; les ACL donnent également la lecture au compte du NOC. L'installateur principal préserve un User/Group non-root existant et adapte la règle sudoers.
+
+Les captures actuelles montrent le scénario local de validation. Les tests Windows et les vérifications Bash ne constituent pas un déploiement Ubuntu. La passerelle Baileys réelle, les ACL Linux et les unités du Dell restent à appliquer puis vérifier avec `MODULES.md`. Aucun service ni pare-feu de production n'a été modifié.
+
+## Journal agrandi en modale — 14 octobre 2026
+
+Le bouton « Agrandir » ouvre le journal dans un dialog natif, avec messages complets, dates et heures détaillées, identifiants et niveaux. Le rendu réutilise le flux existant et conserve au plus 200 lignes ; les copies de la modale sont libérées à la fermeture. Le panneau compact garde ses dimensions.
+
+Vérification dans Chrome avec une instance locale et une route d'injection présente uniquement dans `.qa`, exclue de l'archive : 201 événements ajoutés, limite de 200 respectée dans les deux vues, nouveaux événements reçus par SSE sans navigation, absence de doublons, messages multiligne et texte HTML affichés intégralement comme texte. La pause ne force pas le défilement ; la reprise rejoint les derniers événements. Ouverture au clavier, fermeture par Échap ou bouton, retour du focus sur « Agrandir » et réouverture avec l'historique courant vérifiés.
+
+La modale reste dans les limites du viewport en 1536 × 680, 1366 × 768, 390 × 844 et 375 × 667. Son contenu ne déborde pas horizontalement et le bouton de fermeture reste visible. Le document compact conserve sa hauteur de 744 px et le journal de 146 px en 1536 × 680. Aucune exception JavaScript ; syntaxe JS et `git diff --check` validés. `events-modal.png` montre les événements synthétiques utilisés pour ces vérifications. Aucun déploiement de production effectué.

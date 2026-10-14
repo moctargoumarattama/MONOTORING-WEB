@@ -4,6 +4,31 @@ Guide pour mettre à jour le Dell existant et installer la sentinelle sur `187.7
 
 ## 1. Mettre à jour le Dell
 
+Pour appliquer seulement ce correctif vocal à une version NOC/Sentinel déjà installée, transférez l'archive actualisée, extrayez-la puis remplacez les fichiers suivants. Sauvegardez les versions courantes avant la copie ; aucune modification du compte de service ni des dépendances du dashboard n'est nécessaire :
+
+```bash
+tar -xzf "$HOME/noc-dashboard.tar.gz" -C "$HOME"
+cd "$HOME/noc-dashboard"
+sudo install -d -o root -g root -m 0700 /var/backups/noc-dashboard
+NOC_VOICE_BACKUP="$(sudo mktemp -d /var/backups/noc-dashboard/voice-fix-XXXXXXXX)"
+sudo cp -p /opt/noc-dashboard/config.py /opt/noc-dashboard/main.py \
+  /opt/noc-dashboard/whatsapp.py /opt/noc-dashboard/voice_transcribe.py \
+  /opt/noc-dashboard/install-voice.sh "$NOC_VOICE_BACKUP/"
+sudo install -d -o root -g root -m 0700 "$NOC_VOICE_BACKUP/static"
+sudo cp -p /opt/noc-dashboard/static/index.html "$NOC_VOICE_BACKUP/static/"
+NOC_SERVICE_USER="$(sudo systemctl show noc-dashboard.service --property=User --value)"
+NOC_SERVICE_GROUP="$(sudo systemctl show noc-dashboard.service --property=Group --value)"
+if test -z "$NOC_SERVICE_GROUP"; then NOC_SERVICE_GROUP="$(id -gn "$NOC_SERVICE_USER")"; fi
+sudo install -o root -g "$NOC_SERVICE_GROUP" -m 0640 config.py main.py whatsapp.py voice_transcribe.py /opt/noc-dashboard/
+sudo install -o root -g "$NOC_SERVICE_GROUP" -m 0750 install-voice.sh /opt/noc-dashboard/install-voice.sh
+sudo install -o root -g "$NOC_SERVICE_GROUP" -m 0640 static/index.html /opt/noc-dashboard/static/index.html
+sudoedit /etc/noc-dashboard.env
+sudo bash /opt/noc-dashboard/install-voice.sh
+sudo systemctl restart noc-dashboard.service
+```
+
+Appliquez les paramètres ci-dessous et branchez ensuite le bridge Baileys de la section 2. Si les modules NOC/Sentinel n'étaient pas encore installés, utilisez plutôt l'installation complète :
+
 Transférez l'archive actualisée comme indiqué dans [README.md](README.md), puis sur le Dell :
 
 ```bash
@@ -17,7 +42,7 @@ sudoedit /etc/noc-dashboard.env
 
 `install.sh` sauvegarde les fichiers remplacés et conserve la configuration existante. Il met à jour uniquement le NOC, ses dépendances et sa règle sudoers. Le script `/usr/local/bin/backup-babamarket.sh` est installé seulement s'il n'existe pas : une sauvegarde déjà personnalisée est conservée.
 
-`install-voice.sh` prépare un venv séparé dans `/opt/noc-dashboard/voice-venv` et le modèle **tiny multilingue** local dans `/opt/noc-dashboard/models/whisper-tiny`. Le téléchargement intervient à l'installation. Une commande vocale ne télécharge jamais de modèle.
+`install-voice.sh` prépare un venv séparé dans `/opt/noc-dashboard/voice-venv` et le modèle **tiny multilingue** local dans `/opt/noc-dashboard/models/whisper`. Le téléchargement intervient à l'installation. Une commande vocale ne télécharge jamais de modèle. Un ancien chemin `whisper-tiny` explicitement configuré reste compatible : l'installateur principal préserve les valeurs existantes et ajoute uniquement les clés absentes.
 
 Vérifiez ces valeurs dans `/etc/noc-dashboard.env`, en conservant les secrets actuels :
 
@@ -30,7 +55,9 @@ NOC_WHATSAPP_SEND_URL=http://127.0.0.1:3001/message/send
 NOC_WHATSAPP_SEND_TO_FIELD=to
 NOC_WHATSAPP_SEND_TEXT_FIELD=text
 NOC_WHISPER_PYTHON=/opt/noc-dashboard/voice-venv/bin/python
-NOC_WHISPER_MODEL_PATH=/opt/noc-dashboard/models/whisper-tiny
+NOC_WHISPER_MODEL_PATH=/opt/noc-dashboard/models/whisper
+NOC_WHISPER_MODEL=tiny
+NOC_VOICE_ENABLED=true
 NOC_BACKUP_SCRIPT=/usr/local/bin/backup-babamarket.sh
 NOC_BACKUP_PATH=/mnt/babamarket-backups
 ```
@@ -49,7 +76,95 @@ sudo visudo -cf /etc/sudoers.d/noc-dashboard
 
 Le dashboard reste accessible sans connexion ni jeton de consultation. Le contrôle WhatsApp utilise le numéro autorisé et le secret du webhook; les jetons des agents et des actions du navigateur restent propres à ces canaux.
 
+### Compte moctar et permissions du modèle
+
+Les services existants continuent à fonctionner sous leur compte actuel, y compris `moctar`. L'installateur principal conserve le **User et le Group non-root déjà configurés** pour le NOC, puis adapte les droits des fichiers et sudoers à ces valeurs. Une installation neuve utilise `noc-dashboard`. Il ne crée ni ne remplace le compte d'une installation existante ; une ancienne unité exécutée sous root est refusée pour éviter toute migration implicite. Si `moctar` existe, le modèle reste propriétaire `moctar:moctar` et l'installation vocale accorde la lecture au véritable compte du NOC par groupe/ACL ou permissions adaptées. Les dossiers parents doivent également être traversables par ce compte.
+
+```bash
+sudo systemctl show noc-dashboard.service --property=User --property=Group
+sudo systemctl show klasora-whatsapp.service --property=User --property=Group
+NOC_SERVICE_USER="$(sudo systemctl show noc-dashboard.service --property=User --value)"
+sudo -u "$NOC_SERVICE_USER" test -x /opt/noc-dashboard/voice-venv/bin/python
+sudo -u "$NOC_SERVICE_USER" test -r /opt/noc-dashboard/models/whisper/model.bin
+sudo -u "$NOC_SERVICE_USER" test -r /opt/noc-dashboard/models/whisper/config.json
+sudo -u "$NOC_SERVICE_USER" test -r /opt/noc-dashboard/models/whisper/tokenizer.json
+namei -l /opt/noc-dashboard/models/whisper/model.bin
+curl --fail --silent http://127.0.0.1:5050/api/voice/status | python3.11 -m json.tool
+```
+
+Ces chemins suivent les nouveaux défauts ; utilisez votre chemin configuré s'il diffère. `/api/voice/status` expose `status`, `reason`, `model`, `model_path`, `download_available` et `webhook_configured`. Un modèle absent ou illisible produit un diagnostic sans bloquer la collecte. Si le venv dédié ne contient pas `faster_whisper`, le backend vérifie aussi le Python qui exécute le dashboard. Rechargez l'interface avec **Ctrl+F5** après mise à jour. Aucun déploiement sur le Dell n'a été exécuté depuis cet environnement Windows.
+
 ## 2. Configurer le webhook de la passerelle WhatsApp
+
+### Bridge Baileys pour les notes vocales réelles
+
+L'URL `mmg.whatsapp.net` d'un `audioMessage` contient un blob chiffré. Le module [integrations/baileys-noc.cjs](integrations/baileys-noc.cjs) réutilise `downloadMediaMessage` de la **version Baileys déjà installée**, avec le mode `stream`, puis envoie l'audio déchiffré au NOC. Ce mode et `sock.updateMediaMessage` sont décrits dans la [documentation Baileys](https://github.com/WhiskeySockets/docs/blob/main/messaging/media-messages.mdx). Aucun nouveau paquet Node n'est nécessaire.
+
+Installez le bridge dans un emplacement lisible par la passerelle, même sous `moctar` :
+
+```bash
+cd "$HOME/noc-dashboard"
+sudo install -d -o root -g root -m 0755 /usr/local/lib/noc-integrations
+sudo install -o root -g root -m 0644 integrations/baileys-noc.cjs /usr/local/lib/noc-integrations/baileys-noc.cjs
+sudo systemctl show klasora-whatsapp.service --property=WorkingDirectory --property=ExecStart
+```
+
+Chargez seulement le secret privé entrant et le numéro administrateur dans la passerelle. Conservez son secret de réponses et ses paramètres actuels :
+
+```bash
+NOC_WEBHOOK_TOKEN="$(sudo sed -n 's/^NOC_WHATSAPP_WEBHOOK_TOKEN=//p' /etc/noc-dashboard.env)"
+NOC_ADMIN_PHONE="$(sudo sed -n 's/^ADMIN_PHONE_NUMBER=//p' /etc/noc-dashboard.env)"
+if sudo test ! -e /etc/klasora-whatsapp-noc.env; then
+  sudo install -o root -g root -m 0600 /dev/null /etc/klasora-whatsapp-noc.env
+fi
+{
+  printf 'NOC_WHATSAPP_WEBHOOK_TOKEN=%s\n' "$NOC_WEBHOOK_TOKEN"
+  printf 'ADMIN_PHONE_NUMBER=%s\n' "$NOC_ADMIN_PHONE"
+} | sudo tee /etc/klasora-whatsapp-noc.env >/dev/null
+unset NOC_WEBHOOK_TOKEN NOC_ADMIN_PHONE
+sudo systemctl edit klasora-whatsapp.service
+```
+
+Ajoutez uniquement ce bloc dans l'override, sans changer `User` ni réinitialiser les paramètres existants :
+
+```ini
+[Service]
+EnvironmentFile=/etc/klasora-whatsapp-noc.env
+```
+
+Après création du socket **sock** de la session 1 dans le code de la passerelle, réutilisez son export Baileys `downloadMediaMessage` et ajoutez :
+
+```javascript
+const { attachNocWebhook } = require('/usr/local/lib/noc-integrations/baileys-noc.cjs');
+let detachNocWebhook = () => {};
+try {
+  detachNocWebhook = attachNocWebhook(sock, {
+    downloadMediaMessage,
+    adminPhone: process.env.ADMIN_PHONE_NUMBER,
+    sessionId: '1',
+    webhookToken: process.env.NOC_WHATSAPP_WEBHOOK_TOKEN,
+    baseUrl: 'http://127.0.0.1:5050'
+  });
+} catch {
+  console.warn('NOC vocal non branché : vérifier la configuration privée du bridge.');
+}
+sock.ev.on('connection.update', update => {
+  if (update.connection === 'close') detachNocWebhook();
+});
+```
+
+Dans une passerelle ESM, importez le module `.cjs` avec l'interopérabilité existante et réutilisez le même export Baileys déjà chargé. Gardez tous les gestionnaires actuels : le bridge ajoute un listener `messages.upsert` indépendant ; `detachNocWebhook()` retire seulement ce listener. Ne réinstallez pas Baileys et ne remplacez pas la connexion des autres sessions.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart klasora-whatsapp.service
+sudo systemctl status klasora-whatsapp.service --no-pager
+sudo journalctl -u klasora-whatsapp.service -n 30 --no-pager
+```
+
+Seuls les événements nouveaux `notify`, le numéro administrateur et les messages entrants directs de la session configurée sont acceptés. `fromMe`, groupes, historiques et autres numéros sont ignorés. Les JID avec suffixe d'appareil et les LID avec numéro alternatif Baileys sont pris en charge. La file accepte huit messages en attente, avec un seul traitement actif ; le cache de doublons garde au plus 256 IDs. L'audio est limité **pendant le streaming** à 8 Mio, sans gros buffer global. Deux essais HTTP au maximum gardent le même ID ; aucune redirection n'est suivie et les secrets ne sont pas journalisés. Un téléchargement Baileys qui reste bloqué suspend cette file jusqu'à sa résolution, sans accumuler des tâches orphelines.
+
+### Webhook JSON compatible
 
 Dans la passerelle existante, configurez :
 
@@ -102,7 +217,54 @@ Les messages sortants `fromMe:true` sont ignorés. Les autres numéros, groupes 
 
 Le format générique `{id,from,text}` ou `{id,from,audio:{path|url,mimetype}}` est également accepté. Une URL audio doit désigner `http://127.0.0.1:3001/media/...` ou `/uploads/...`, sans redirection. Le média doit être déjà déchiffré par la passerelle. Les blobs `base64` et les URLs WhatsApp externes ne sont pas téléchargés par le NOC.
 
-Pour des fichiers locaux, renseignez `NOC_WHATSAPP_MEDIA_DIR` avec le dossier exact de médias de la passerelle, lisible par `noc-dashboard`. Les fichiers OGG/Opus doivent rester dans ce dossier et les liens symboliques sont refusés. Les notes sont limitées à 8 Mio et 60 secondes; la copie temporaire et le WAV mono 16 kHz sont supprimés après traitement. La transcription tiny multilingue utilise le filtre VAD de détection de parole pour écarter les silences.
+Pour des fichiers locaux, renseignez `NOC_WHATSAPP_MEDIA_DIR` avec le dossier exact de médias de la passerelle, lisible par le véritable User du service NOC. Les fichiers OGG, Opus, MP3 et WAV doivent rester dans ce dossier et les liens symboliques sont refusés. Les notes sont limitées à 8 Mio et 60 secondes; la copie temporaire et le WAV mono 16 kHz sont supprimés après traitement. La transcription tiny multilingue utilise le filtre VAD de détection de parole pour écarter les silences.
+
+### Routes et vérifications sans action réelle
+
+| Route | Fonction |
+| --- | --- |
+| `GET /api/overview` | Alias de `/api/snapshot` |
+| `GET /events` | Alias SSE de `/api/stream` |
+| `GET /api/voice/status` | Diagnostic et disponibilité du modèle / canal vocal |
+| `POST /api/voice/webhook` | JSON normalisé, alias de `/api/whatsapp/webhook` |
+| `POST /api/voice/process` | Audio brut déchiffré, ou JSON normalisé compatible |
+| `POST /api/voice/simulate` | Analyse avec `X-Admin-Token`, toujours en simulation |
+
+Le POST audio accepte `audio/ogg`, `audio/opus`, `audio/mpeg`, `audio/wav` et `application/octet-stream`. Ses headers obligatoires sont `X-Gateway-Secret` (valeur de **NOC_WHATSAPP_WEBHOOK_TOKEN**, différente de `NOC_GATEWAY_SECRET`), `X-WhatsApp-From`, `X-Message-Id` et `X-Session-Id`. Le bridge envoie l'audio sur `/api/voice/process` et le texte sur `/api/voice/webhook`. Un upload accepté produit `202`, puis le résultat arrive dans le SSE ; le webhook JSON normalisé garde sa réponse `200`.
+
+La simulation ci-dessous ne redémarre **jamais** de service et n'envoie aucune réponse WhatsApp, même pour `restart babamarket`. Les commandes utilisent le jeton réel sans l'afficher ni le placer dans les arguments de curl :
+
+```bash
+curl --fail --silent http://127.0.0.1:5050/api/overview | python3.11 -m json.tool
+curl --silent --no-buffer --max-time 7 http://127.0.0.1:5050/events || test "$?" -eq 28
+curl --fail --silent http://127.0.0.1:5050/api/voice/status | python3.11 -m json.tool
+NOC_ADMIN_TOKEN="$(sudo sed -n 's/^NOC_ADMIN_TOKEN=//p' /etc/noc-dashboard.env)"
+printf 'header = "X-Admin-Token: %s"\n' "$NOC_ADMIN_TOKEN" |
+  curl --config - --fail --silent --show-error --header 'Content-Type: application/json' \
+    --data '{"text":"restart babamarket"}' http://127.0.0.1:5050/api/voice/simulate
+unset NOC_ADMIN_TOKEN
+```
+
+Pour un test réel de transcription, enregistrez seulement **« statut »** dans un fichier OGG. Ce test traite la note puis répond sur WhatsApp. Fournissez un fichier existant avec `--data-binary`, sans JSON, base64 ni multipart :
+
+```bash
+read -r -p 'Chemin du fichier OGG enregistré : ' NOC_AUDIO_FILE
+NOC_WEBHOOK_TOKEN="$(sudo sed -n 's/^NOC_WHATSAPP_WEBHOOK_TOKEN=//p' /etc/noc-dashboard.env)"
+NOC_ADMIN_PHONE="$(sudo sed -n 's/^ADMIN_PHONE_NUMBER=//p' /etc/noc-dashboard.env)"
+NOC_SESSION_ID="$(sudo sed -n 's/^NOC_WHATSAPP_SESSION_ID=//p' /etc/noc-dashboard.env)"
+NOC_SESSION_ID="${NOC_SESSION_ID:-1}"
+NOC_MESSAGE_ID="$(python3.11 -c 'import uuid; print(uuid.uuid4().hex)')"
+{
+  printf 'header = "X-Gateway-Secret: %s"\n' "$NOC_WEBHOOK_TOKEN"
+  printf 'header = "X-WhatsApp-From: %s@s.whatsapp.net"\n' "$NOC_ADMIN_PHONE"
+  printf 'header = "X-Message-Id: %s"\n' "$NOC_MESSAGE_ID"
+  printf 'header = "X-Session-Id: %s"\n' "$NOC_SESSION_ID"
+} | curl --config - --fail --silent --show-error --header 'Content-Type: audio/ogg' \
+  --data-binary "@$NOC_AUDIO_FILE" http://127.0.0.1:5050/api/voice/process
+unset NOC_WEBHOOK_TOKEN NOC_ADMIN_PHONE NOC_SESSION_ID NOC_MESSAGE_ID NOC_AUDIO_FILE
+```
+
+Suivez ensuite `/events` et la carte Voice-to-Action pour la transcription et le résultat. Dans le dossier source, `node --test tests/test_baileys_noc.cjs` vérifie le bridge avec Baileys simulé et un serveur HTTP loopback, sans envoyer de message WhatsApp réel.
 
 ## 3. Commandes prises en charge
 
@@ -133,7 +295,7 @@ Le volume cible doit être réellement monté sur un système de fichiers distin
 
 L'unité systemd autorise l'écriture dans `/mnt/babamarket-backups`. Pour un autre `NOC_BACKUP_PATH`, ajoutez aussi ce chemin à `ReadWritePaths` dans un override créé avec `sudo systemctl edit noc-dashboard.service`, puis exécutez `sudo systemctl daemon-reload` et redémarrez le NOC. La variable seule ne modifie pas les permissions du service.
 
-Le script comporte un délai interne de 280 secondes. `sudo` est accordé uniquement au chemin exact `/usr/local/bin/backup-babamarket.sh`, sans argument. Un `NOC_BACKUP_SCRIPT` personnalisé est exécuté avec les droits de `noc-dashboard`, sans nouvelle permission root; il doit être exécutable, appartenir à root et être non modifiable, tout comme ses dossiers parents. Un chemin absent produit une réponse claire et ne bloque pas le collecteur.
+Le script comporte un délai interne de 280 secondes. `sudo` est accordé uniquement au chemin exact `/usr/local/bin/backup-babamarket.sh`, sans argument. Un `NOC_BACKUP_SCRIPT` personnalisé est exécuté avec les droits du User du service NOC, sans nouvelle permission root; il doit être exécutable, appartenir à root et être non modifiable, tout comme ses dossiers parents. Un chemin absent produit une réponse claire et ne bloque pas le collecteur.
 
 Les autres moteurs de base de données nécessitent leur propre script adapté. Une copie de fichiers en fonctionnement n'est pas un instantané transactionnel global; vérifiez aussi une restauration sur une copie isolée des données.
 

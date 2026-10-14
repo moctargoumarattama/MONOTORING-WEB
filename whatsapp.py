@@ -29,6 +29,9 @@ from starlette.exceptions import HTTPException
 from collector import utc_now
 from config import RESTART_ALLOWLIST, Settings
 
+AUDIO_MIME_TYPES = frozenset({"audio/ogg", "audio/opus", "application/ogg",
+                              "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav"})
+
 
 def normalize_phone(value: Any) -> str:
     """Accepter un numéro personnel international; jamais un groupe ou un LID."""
@@ -122,8 +125,8 @@ def parse_message(payload: dict[str, Any], admin_phone_number: str) -> dict[str,
         if not isinstance(audio, dict):
             raise ValueError("Média audio invalide")
         mimetype = audio.get("mimetype", data.get("mimetype", "audio/ogg"))
-        if not isinstance(mimetype, str) or mimetype.split(";", 1)[0].strip().lower() not in {"audio/ogg", "audio/opus", "application/ogg"}:
-            raise ValueError("Seules les notes vocales OGG/Opus sont autorisées")
+        if not isinstance(mimetype, str) or mimetype.split(";", 1)[0].strip().lower() not in AUDIO_MIME_TYPES:
+            raise ValueError("Formats audio autorisés : OGG, Opus, MP3 et WAV")
         path, url = audio.get("path"), audio.get("url")
         if bool(path) == bool(url):
             raise ValueError("Fournir un seul chemin ou une seule URL audio déchiffrée")
@@ -147,7 +150,7 @@ def parse_intent(text: str) -> tuple[str, str | None]:
     if normalized in {"statut", "etat", "statut des services", "etat des services",
                       "statue", "statue des services", "statuts", "statuts des services"}:
         return "status", None
-    match = re.fullmatch(r"redemarre ([a-z0-9-]+)", normalized)
+    match = re.fullmatch(r"(?:redemarre|restart) ([a-z0-9-]+)", normalized)
     if match and match[1] in RESTART_ALLOWLIST:
         return "restart", match[1]
     if normalized == "sauvegarde babamarket":
@@ -193,26 +196,38 @@ class WhatsAppController:
         self.client: httpx.AsyncClient | None = None
         self.remote_client: httpx.AsyncClient | None = None
         self.worker: asyncio.Task[None] | None = None
+        self.readiness_task: asyncio.Task[None] | None = None
         self.last_command: dict[str, Any] | None = None
         self.busy = False
+        self.uploading = 0
         self._seen: OrderedDict[str, float] = OrderedDict()
+        self._check_lock = asyncio.Lock()
+        self._voice = {"status": "checking" if settings.voice_enabled else "disabled",
+                       "model": settings.whisper_model, "model_path": None,
+                       "reason": "Vérification du moteur vocal en cours" if settings.voice_enabled
+                       else "Module vocal désactivé par NOC_VOICE_ENABLED", "download_available": False}
+        self._voice_python = sys.executable
 
     @property
     def enabled(self) -> bool:
+        """État réel de transcription, indépendant du secret du webhook."""
+        return self.settings.voice_enabled and self._voice["status"] == "ready"
+
+    @property
+    def webhook_configured(self) -> bool:
         return bool(self.settings.admin_phone_number and self.settings.whatsapp_webhook_token)
 
     async def start(self) -> None:
-        if not self.enabled:
-            return
-        normalize_phone(self.settings.admin_phone_number)
-        send = urlsplit(self.settings.whatsapp_send_url)
-        if (send.scheme != "http" or send.hostname not in {"127.0.0.1", "::1"}
-                or send.port != 3001 or send.username or send.password or send.fragment):
-            raise ValueError("API WhatsApp d'envoi limitée à la passerelle locale:3001")
-        self.client = httpx.AsyncClient(
-            timeout=3, trust_env=False, verify=False, follow_redirects=False,
-            limits=httpx.Limits(max_connections=2, max_keepalive_connections=2),
-        )
+        if self.webhook_configured:
+            normalize_phone(self.settings.admin_phone_number)
+            send = urlsplit(self.settings.whatsapp_send_url)
+            if (send.scheme != "http" or send.hostname not in {"127.0.0.1", "::1"}
+                    or send.port != 3001 or send.username or send.password or send.fragment):
+                raise ValueError("API WhatsApp d'envoi limitée à la passerelle locale:3001")
+            self.client = httpx.AsyncClient(
+                timeout=3, trust_env=False, verify=False, follow_redirects=False,
+                limits=httpx.Limits(max_connections=2, max_keepalive_connections=2),
+            )
         if self.settings.voice_remote_url:
             remote = urlsplit(self.settings.voice_remote_url)
             try:
@@ -227,9 +242,68 @@ class WhatsAppController:
                 timeout=self.settings.whisper_timeout, trust_env=False, follow_redirects=False,
                 limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
             )
+        # La simulation et le moteur vocal fonctionnent aussi avant de relier WhatsApp.
         self.worker = asyncio.create_task(self._worker(), name="noc-whatsapp")
+        self.readiness_task = asyncio.create_task(self._readiness_loop(), name="noc-voice-readiness")
+
+    async def _readiness_loop(self) -> None:
+        while True:
+            await self.refresh_voice_readiness()
+            await asyncio.sleep(300 if self.enabled else 30)
+
+    async def refresh_voice_readiness(self) -> dict[str, Any]:
+        """Importer les dépendances uniquement dans un enfant borné, sans modèle chargé."""
+        async with self._check_lock:
+            info = {"status": "disabled", "model": self.settings.whisper_model,
+                    "model_path": None, "reason": "Module vocal désactivé par NOC_VOICE_ENABLED",
+                    "download_available": False}
+            if self.settings.voice_enabled:
+                if not shutil.which("ffmpeg"):
+                    info["reason"] = "ffmpeg absent : installez ffmpeg sur le Dell"
+                elif self.remote_client is not None:
+                    info.update(status="ready", model="remote", reason="Transcription distante configurée")
+                else:
+                    info["reason"] = "faster-whisper absent ou inutilisable dans les environnements Python"
+                    candidates = dict.fromkeys((self.settings.whisper_python, sys.executable,
+                                               str(Path(__file__).parent / "voice-venv" / "bin" / "python")))
+                    for candidate in candidates:
+                        if not candidate or not Path(candidate).is_file():
+                            continue
+                        try:
+                            code, output = await run_process([
+                                candidate, str(Path(__file__).with_name("voice_transcribe.py")),
+                                "--check", "--model", self.settings.whisper_model_path,
+                                "--model-name", self.settings.whisper_model,
+                            ], 20, capture=True)
+                            result = json.loads(output) if code == 0 else None
+                            if not isinstance(result, dict) or result.get("status") not in {"ready", "missing_model", "disabled"}:
+                                continue
+                            # Le JSON du worker ne contient ni secrets ni erreurs natives brutes.
+                            checked = {"status": result["status"],
+                                       "model": str(result.get("model", self.settings.whisper_model))[:24],
+                                       "model_path": result.get("model_path"),
+                                       "reason": str(result.get("reason", "Moteur vocal indisponible"))[:240],
+                                       "download_available": result.get("download_available") is True}
+                            if checked["status"] == "ready":
+                                info = checked
+                                self._voice_python = candidate
+                                break
+                            if checked["status"] == "missing_model" or info["status"] != "missing_model":
+                                info = checked
+                        except (OSError, TimeoutError, ValueError):
+                            continue
+            changed = info != self._voice
+            self._voice = info
+            if changed:
+                await self._publish()
+            return self.snapshot()
 
     async def close(self) -> None:
+        if self.readiness_task:
+            self.readiness_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.readiness_task
+            self.readiness_task = None
         if self.worker:
             self.worker.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -239,13 +313,21 @@ class WhatsAppController:
             if client:
                 await client.aclose()
         self.client = self.remote_client = None
+        while not self.queue.empty():
+            message = self.queue.get_nowait()
+            self._remove_upload(message)
+            self.queue.task_done()
 
     def snapshot(self) -> dict[str, Any]:
-        return {"enabled": self.enabled, "busy": self.busy, "queued": self.queue.qsize(),
+        return {**self._voice, "enabled": self.enabled,
+                "status": "active" if self.enabled and self.busy else self._voice["status"],
+                "webhook_configured": self.webhook_configured,
+                "webhook_status": "configured" if self.webhook_configured else "missing_configuration",
+                "busy": self.busy, "queued": self.queue.qsize(),
                 "last_command": dict(self.last_command) if self.last_command else None}
 
-    async def accept(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.enabled:
+    async def accept(self, payload: dict[str, Any], *, uploaded_audio: Path | None = None) -> dict[str, Any]:
+        if not self.webhook_configured:
             raise RuntimeError("Commandes WhatsApp non configurées")
         if ("sessionId" in payload
                 and str(payload["sessionId"]) != self.settings.whatsapp_session_id):
@@ -258,12 +340,32 @@ class WhatsAppController:
             self._seen.popitem(last=False)
         if message["id"] in self._seen:
             return {"accepted": True, "duplicate": True}
+        if uploaded_audio is not None:
+            # Seul le routeur peut fournir ce chemin, jamais le JSON reçu.
+            if message["audio"] is None:
+                raise ValueError("Audio obligatoire")
+            message["audio"] = {"upload_path": str(uploaded_audio)}
         # QueueFull laisse l'identifiant réessayable; aucun effet si non accepté.
         self.queue.put_nowait(message)
         self._seen[message["id"]] = now
         if len(self._seen) > 256:
             self._seen.popitem(last=False)
         return {"accepted": True, "duplicate": False}
+
+    async def simulate(self, text: str) -> dict[str, Any]:
+        """Tester le parser et le SSE sans commande systemd, sauvegarde ou envoi WhatsApp."""
+        if not isinstance(text, str) or not 1 <= len(text.strip()) <= 1000:
+            raise ValueError("Commande texte requise, limitée à 1000 caractères")
+        self.queue.put_nowait({"id": "simulation-" + str(time.time_ns()), "text": text.strip(),
+                              "audio": None, "source": "simulation", "simulated": True})
+        return {"accepted": True, "simulated": True, "message": "Simulation en file : aucun service ne sera modifié."}
+
+    @staticmethod
+    def _remove_upload(message: dict[str, Any]) -> None:
+        path = (message.get("audio") or {}).get("upload_path")
+        if path:
+            with contextlib.suppress(OSError):
+                Path(path).unlink(missing_ok=True)
 
     async def _publish(self) -> None:
         await self.runtime.publish_module_update()
@@ -276,6 +378,7 @@ class WhatsAppController:
                 "id": message["id"], "timestamp": utc_now(), "source": message["source"],
                 "transcription": message["text"][:1000], "action": "pending", "service": None,
                 "status": "processing", "response": "", "reply_sent": False,
+                "simulated": message.get("simulated") is True,
             }
             try:
                 try:
@@ -284,7 +387,16 @@ class WhatsAppController:
                     action, service = parse_intent(text)
                     self.last_command.update(transcription=text[:1000], action=action, service=service)
                     await self._publish()
-                    response, success = await self._execute(action, service)
+                    if message.get("simulated"):
+                        if action == "status":
+                            response, success = await self._execute(action, service)
+                            response = "SIMULATION · " + response
+                        elif action in {"restart", "backup"}:
+                            response, success = f"SIMULATION · {action} {service} reconnu. Aucune action exécutée.", True
+                        else:
+                            response, success = "SIMULATION · Commande non reconnue.", False
+                    else:
+                        response, success = await self._execute(action, service)
                     self.last_command.update(response=response[:1000], status="completed" if success else "failed", timestamp=utc_now())
                 except asyncio.CancelledError:
                     raise
@@ -296,6 +408,11 @@ class WhatsAppController:
                     self.last_command.update(response=response, status="failed", timestamp=utc_now())
                 # Publier le résultat avant d'attendre la réponse de la passerelle.
                 await self._publish()
+                if message.get("simulated"):
+                    self.runtime.collector.add_event("info", f"Simulation vocale · {self.last_command['action']} · {self.last_command['status']}")
+                    self.busy = False
+                    await self._publish()
+                    continue
                 self.last_command["reply_sent"] = await self._send_reply(self.last_command["response"])
                 level = "info" if self.last_command["status"] == "completed" and self.last_command["reply_sent"] else "warning"
                 delivery = "" if self.last_command["reply_sent"] else " · réponse non livrée"
@@ -308,6 +425,7 @@ class WhatsAppController:
                 self.busy = False
             finally:
                 self.busy = False
+                self._remove_upload(message)
                 self.queue.task_done()
 
     async def _execute(self, action: str, service: str | None) -> tuple[str, bool]:
@@ -397,8 +515,8 @@ class WhatsAppController:
                 break
             if parent.is_symlink():
                 raise ValueError("Lien symbolique audio interdit")
-        if candidate.suffix.lower() not in {".ogg", ".opus"}:
-            raise ValueError("Extension de note vocale OGG/Opus requise")
+        if candidate.suffix.lower() not in {".ogg", ".opus", ".mp3", ".wav"}:
+            raise ValueError("Extension audio OGG, Opus, MP3 ou WAV requise")
         try:
             descriptor = os.open(candidate, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except OSError as exc:
@@ -437,6 +555,12 @@ class WhatsAppController:
                     raise ValueError("Note vocale vide")
 
     async def _transcribe(self, audio: dict[str, Any]) -> str:
+        if not self.settings.voice_enabled:
+            raise ValueError("Module vocal désactivé par NOC_VOICE_ENABLED")
+        if self._voice["status"] != "ready":
+            await self.refresh_voice_readiness()
+            if not self.enabled:
+                raise ValueError(self._voice["reason"])
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
             raise ValueError("ffmpeg doit être installé pour les commandes vocales")
@@ -444,7 +568,9 @@ class WhatsAppController:
         with tempfile.TemporaryDirectory(prefix="noc-voice-", dir=temporary_root) as temporary:
             directory = Path(temporary)
             incoming, wav = directory / "message.ogg", directory / "message.wav"
-            if audio.get("path"):
+            if audio.get("upload_path"):
+                await asyncio.to_thread(shutil.copyfile, audio["upload_path"], incoming)
+            elif audio.get("path"):
                 await asyncio.to_thread(self._copy_local_audio, audio["path"], incoming)
             else:
                 await self._download_audio(audio["url"], incoming)
@@ -476,13 +602,13 @@ class WhatsAppController:
                                     raise ValueError("Transcription trop volumineuse")
                                 output.extend(chunk)
             else:
-                model = Path(self.settings.whisper_model_path)
+                model = Path(self._voice.get("model_path") or self.settings.whisper_model_path)
                 if not model.is_dir() or not (model / "model.bin").is_file():
-                    raise ValueError("Modèle faster-whisper tiny local non installé")
+                    raise ValueError("Modèle Whisper local absent ou illisible : lancez install-voice.sh")
                 code, output = await run_process([
-                    self.settings.whisper_python if Path(self.settings.whisper_python).is_file() else sys.executable,
+                    self._voice_python,
                     str(Path(__file__).with_name("voice_transcribe.py")),
-                    "--model", str(model), "--audio", str(wav),
+                    "--model", str(model), "--model-name", self.settings.whisper_model, "--audio", str(wav),
                 ], self.settings.whisper_timeout, capture=True)
                 if code:
                     raise ValueError("Transcription locale impossible (voir installation faster-whisper)")

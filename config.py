@@ -62,7 +62,9 @@ class Settings:
     whatsapp_media_dir: str = "/var/lib/klasora-whatsapp/media"
     whatsapp_max_audio_bytes: int = 8 * 1024 * 1024
     whatsapp_audio_seconds: int = 60
-    whisper_model_path: str = "/opt/noc-dashboard/models/whisper-tiny"
+    voice_enabled: bool = True
+    whisper_model: str = "tiny"
+    whisper_model_path: str = "/opt/noc-dashboard/models/whisper"
     whisper_python: str = "/opt/noc-dashboard/voice-venv/bin/python"
     whisper_timeout: float = 120.0
     backup_script: str = "/usr/local/bin/backup-babamarket.sh"
@@ -97,7 +99,9 @@ class Settings:
             whatsapp_media_dir=os.environ.get("NOC_WHATSAPP_MEDIA_DIR", "/var/lib/klasora-whatsapp/media"),
             whatsapp_max_audio_bytes=int(_number("NOC_WHATSAPP_MAX_AUDIO_BYTES", 8388608, 1024, 8388608)),
             whatsapp_audio_seconds=int(_number("NOC_WHATSAPP_AUDIO_SECONDS", 60, 1, 60)),
-            whisper_model_path=os.environ.get("NOC_WHISPER_MODEL_PATH", "/opt/noc-dashboard/models/whisper-tiny"),
+            voice_enabled=_boolean("NOC_VOICE_ENABLED", True),
+            whisper_model=os.environ.get("NOC_WHISPER_MODEL", "tiny") or "tiny",
+            whisper_model_path=os.environ.get("NOC_WHISPER_MODEL_PATH", "/opt/noc-dashboard/models/whisper") or "/opt/noc-dashboard/models/whisper",
             whisper_python=os.environ.get("NOC_WHISPER_PYTHON", "/opt/noc-dashboard/voice-venv/bin/python"),
             whisper_timeout=_number("NOC_WHISPER_TIMEOUT", 120, 5, 300),
             backup_script=os.environ.get("NOC_BACKUP_SCRIPT", os.environ.get("NOC_BABAMARKET_BACKUP_SCRIPT", "/usr/local/bin/backup-babamarket.sh")) or "/usr/local/bin/backup-babamarket.sh",

@@ -300,6 +300,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
                 await self.controller._download_audio("http://127.0.0.1:3001/media/test.ogg", Path(temporary) / "a.ogg")
 
     async def test_voice_temporary_files_are_removed_after_transcription_failure(self) -> None:
+        self.controller._voice.update(status="ready", model_path="missing-whisper-model")
         paths = []
         def copy(source: str, destination: Path) -> None:
             paths.append(destination.parent)
