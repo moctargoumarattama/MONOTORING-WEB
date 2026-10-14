@@ -23,6 +23,7 @@ from sse_starlette.sse import EventSourceResponse
 
 import collector
 from config import RESTART_ALLOWLIST, Settings
+from cyberdefense import CyberDefenseManager, TRAP_PATHS
 from sentinel import SentinelManager
 from whatsapp import AUDIO_MIME_TYPES, WhatsAppController, parse_message
 
@@ -136,6 +137,7 @@ class Runtime:
         self.restart_locks = {name: asyncio.Lock() for name in RESTART_ALLOWLIST}
         self.restart_times: dict[str, float] = {}
         self.sentinel = SentinelManager(settings, self)
+        self.cyber = CyberDefenseManager(settings, self)
         self.whatsapp = WhatsAppController(settings, self, self.restart_service)
 
     def vps_snapshot(self) -> list[dict[str, Any]]:
@@ -160,6 +162,7 @@ class Runtime:
             snapshot["global_status"] = "incident"
         snapshot["events"] = list(self.collector.events)
         snapshot["sentinel"] = self.sentinel.snapshot()
+        snapshot["cyber"] = self.cyber.snapshot()
         snapshot["voice"] = self.whatsapp.snapshot()
         serialized = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         self.latest = snapshot
@@ -245,6 +248,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.runtime = runtime
         await runtime.collector.start()
         await runtime.sentinel.start()
+        await runtime.cyber.start()
         await runtime.whatsapp.start()
         task = asyncio.create_task(runtime.collect_loop(), name="noc-collector")
         runtime.collect_task = task
@@ -257,12 +261,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await runtime.collector.close()
             await runtime.whatsapp.close()
             await runtime.sentinel.close()
+            await runtime.cyber.close()
 
     application = FastAPI(title="NOC · Tour de contrôle", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     @application.middleware("http")
     async def security_headers(request: Request, call_next):
-        response = await call_next(request)
+        runtime = getattr(application.state, "runtime", None)
+        peer = request.client.host if request.client else ""
+        # Les headers X-Forwarded-For/Forwarded reçus ne sont jamais une identité
+        # pour les bannissements. Le lancement Uvicorn désactive leur réécriture.
+        if (runtime and runtime.cyber.is_banned(peer) and
+                request.url.path.rstrip("/") not in TRAP_PATHS):
+            response = JSONResponse({"detail": "Accès refusé"}, status_code=403)
+        else:
+            response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -298,6 +311,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/stream")
     async def stream(request: Request):
         runtime: Runtime = application.state.runtime
+        peer = request.client.host if request.client else ""
         if runtime.active_streams >= settings.max_streams:
             raise HTTPException(429, "Limite de flux simultanés atteinte", headers={"Retry-After": "5"})
         runtime.active_streams += 1
@@ -305,7 +319,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def events():
             revision = -1
             while True:
-                if await request.is_disconnected():
+                if await request.is_disconnected() or runtime.cyber.is_banned(peer):
                     break
                 async with runtime.changed:
                     if runtime.revision == revision or runtime.latest is None:
@@ -315,6 +329,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             continue
                     revision = runtime.revision
                     data = runtime.serialized
+                # Un ban doit aussi fermer les flux déjà ouverts : leur réveil
+                # est déclenché par la publication de l'incident dans le SSE.
+                if runtime.cyber.is_banned(peer):
+                    break
                 yield {"event": "snapshot", "id": str(revision), "retry": 2000, "data": data}
 
         return CountedEventSourceResponse(events(), runtime=runtime, ping=15, send_timeout=10, headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache, no-store"})
@@ -340,6 +358,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Service non autorisé")
         runtime: Runtime = application.state.runtime
         return await runtime.restart_service(name)
+
+    async def honeypot(request: Request):
+        """Ne lit ni ne renvoie de vrais secrets ; enregistre seulement IP/route."""
+        runtime: Runtime = application.state.runtime
+        result = await runtime.cyber.trap(request.client.host if request.client else "",
+                                         request.url.path.rstrip("/"))
+        return JSONResponse({"detail": "Accès refusé" if result["blocked"] else "Not Found"},
+                            status_code=403 if result["blocked"] else 404)
+
+    for trap_path in sorted(TRAP_PATHS):
+        for path in (trap_path, trap_path + "/"):
+            application.add_api_route(path, honeypot, methods=["GET", "POST"], include_in_schema=False)
+
+    @application.get("/api/cyber/banned-ips")
+    async def cyber_banned_ips():
+        return application.state.runtime.cyber.snapshot()
+
+    @application.post("/api/cyber/simulate")
+    async def cyber_simulate(request: Request):
+        same_origin(request)
+        payload = await limited_json(request, 1024)
+        if not isinstance(payload, dict) or set(payload) != {"path"} or not isinstance(payload["path"], str):
+            raise HTTPException(422, "Objet JSON attendu : {path: route piège}")
+        if payload["path"] not in TRAP_PATHS:
+            raise HTTPException(422, "Route de simulation non autorisée")
+        return await application.state.runtime.cyber.simulate(payload["path"])
+
+    @application.delete("/api/cyber/unban/{ip}")
+    async def cyber_unban(ip: str, request: Request):
+        same_origin(request)
+        try:
+            return await application.state.runtime.cyber.unban(ip)
+        except ValueError:
+            raise HTTPException(422, "Adresse IP invalide") from None
+
+    @application.post("/api/cyber/audit")
+    async def cyber_audit(request: Request):
+        same_origin(request)
+        return await application.state.runtime.cyber.audit_refresh()
+
+    @application.get("/api/cyber/export")
+    async def cyber_export():
+        # Export local sans secrets de passerelle ni mots de passe Sentinel.
+        return JSONResponse(application.state.runtime.cyber.snapshot(), headers={
+            "Content-Disposition": 'attachment; filename="noc-cyberdefense-logs.json"'})
 
     def require_gateway(request: Request) -> None:
         same_origin(request)
@@ -486,4 +549,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    uvicorn.run(app, host=settings.host, port=settings.port, workers=1, loop="asyncio", http="h11", ws="none", access_log=False, forwarded_allow_ips="127.0.0.1")
+    uvicorn.run(app, host=settings.host, port=settings.port, workers=1, loop="asyncio", http="h11", ws="none", access_log=False, proxy_headers=False)

@@ -193,7 +193,7 @@ def main() -> int:
     require_relay = ('NOC_GATEWAY_RELAY_V2' in changed_server and
                      bool(admin_phone and config.get('NOC_WHATSAPP_WEBHOOK_TOKEN')))
     changes = [Change(app / relative, checked_file(source / relative)) for relative in (
-        'config.py', 'collector.py', 'main.py', 'whatsapp.py', 'static/index.html',
+        'config.py', 'collector.py', 'main.py', 'cyberdefense.py', 'whatsapp.py', 'static/index.html',
         'integrations/baileys-send-alias.cjs', 'integrations/baileys-noc.cjs',
         'vps_agent.py', 'vps-agent.service', 'tools/deploy_dashboard_update.py', 'tools/repair_whatsapp_contract.py')]
     changes += [Change(server, changed_server), Change(MODULE, checked_file(source / 'integrations/baileys-send-alias.cjs')),

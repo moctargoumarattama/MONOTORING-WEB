@@ -59,7 +59,7 @@ if [[ -n "$UNIT_LOAD_STATE" && "$UNIT_LOAD_STATE" != not-found ]]; then
 fi
 readonly APP_USER APP_GROUP
 
-PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service integrations/baileys-noc.cjs integrations/baileys-send-alias.cjs tools/repair_whatsapp_contract.py tools/deploy_dashboard_update.py README.md MODULES.md .gitignore)
+PROJECT_FILES=(requirements.txt requirements-voice.txt requirements-sentinel.txt config.py collector.py main.py cyberdefense.py sentinel.py sentinel_crypto.py whatsapp.py voice_transcribe.py vps_agent.py vps_sentinel.py install.sh install-voice.sh backup-babamarket.sh noc-dashboard.service vps-agent.service sentinel-vps.service integrations/baileys-noc.cjs integrations/baileys-send-alias.cjs tools/repair_whatsapp_contract.py tools/deploy_dashboard_update.py README.md MODULES.md CYBERDEFENSE.md .gitignore)
 for relative in "${PROJECT_FILES[@]}" static/index.html; do
     [[ -f "$SOURCE_DIR/$relative" && ! -L "$SOURCE_DIR/$relative" ]] || fail "fichier source manquant ou lien symbolique : $relative."
 done
@@ -69,7 +69,7 @@ import ast
 import pathlib
 import sys
 directory = pathlib.Path(sys.argv[1])
-for name in ("config.py", "collector.py", "main.py", "vps_agent.py", "whatsapp.py", "voice_transcribe.py", "sentinel.py", "sentinel_crypto.py", "vps_sentinel.py"):
+for name in ("config.py", "collector.py", "main.py", "cyberdefense.py", "vps_agent.py", "whatsapp.py", "voice_transcribe.py", "sentinel.py", "sentinel_crypto.py", "vps_sentinel.py"):
     ast.parse((directory / name).read_text(encoding="utf-8"), filename=name)
 PY
 
@@ -154,6 +154,8 @@ defaults = {
     "NOC_WHISPER_MODEL": "tiny",
     "NOC_VOICE_ENABLED": "true",
     "NOC_SENTINEL_STATE_PATH": "/var/lib/noc-dashboard/sentinel-counters.json",
+    "NOC_CYBER_STATE_PATH": "/var/lib/noc-dashboard/blocked_ips.json",
+    "NOC_CYBER_PROTECTED_IPS": "187.77.171.225",
 }
 missing = [f"{key}={value}" for key, value in defaults.items() if key not in keys]
 if missing:

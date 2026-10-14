@@ -76,6 +76,8 @@ class Settings:
     sentinel_stale_seconds: float = 35.0
     sentinel_geoip_enabled: bool = True
     sentinel_state_path: str = "/var/lib/noc-dashboard/sentinel-counters.json"
+    cyber_state_path: str = "/var/lib/noc-dashboard/blocked_ips.json"
+    cyber_protected_ips: tuple[str, ...] = ("187.77.171.225",)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -114,4 +116,8 @@ class Settings:
             sentinel_stale_seconds=_number("NOC_SENTINEL_STALE_SECONDS", 35, 15, 300),
             sentinel_geoip_enabled=_boolean("NOC_SENTINEL_GEOIP", True),
             sentinel_state_path=os.environ.get("NOC_SENTINEL_STATE_PATH", "/var/lib/noc-dashboard/sentinel-counters.json"),
+            cyber_state_path=os.environ.get("NOC_CYBER_STATE_PATH", "/var/lib/noc-dashboard/blocked_ips.json"),
+            cyber_protected_ips=tuple(value.strip() for value in
+                                     os.environ.get("NOC_CYBER_PROTECTED_IPS", "187.77.171.225").split(",")
+                                     if value.strip()),
         )
