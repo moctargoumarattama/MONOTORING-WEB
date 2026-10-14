@@ -173,13 +173,13 @@ class VoiceAPITests(unittest.TestCase):
         self.backup.assert_not_awaited()
         self.reply.assert_not_awaited()
 
-    def test_simulation_requires_admin_and_rejects_cross_origin_or_invalid_payload(self):
-        self.assertEqual(self.client.post("/api/voice/simulate", json={"text": "statut"}).status_code, 401)
-        headers = {"X-Admin-Token": "admin-secret", "Origin": "https://wrong.invalid"}
+    def test_simulation_is_direct_but_rejects_cross_origin_or_invalid_payload(self):
+        headers = {"Origin": "https://wrong.invalid"}
         self.assertEqual(self.client.post("/api/voice/simulate", json={"text": "statut"}, headers=headers).status_code, 403)
         for body in ({"text": ""}, {"text": 12}, {"text": "statut", "execute": True}, []):
-            self.assertEqual(self.client.post("/api/voice/simulate", json=body, headers={"X-Admin-Token": "admin-secret"}).status_code, 422)
+            self.assertEqual(self.client.post("/api/voice/simulate", json=body).status_code, 422)
         self.assertIsNone(self.controller.last_command)
+        self.assertEqual(self.client.post("/api/voice/simulate", json={"text": "statut"}).status_code, 202)
 
     def test_voice_webhook_alias_accepts_original_gateway_json(self):
         body = {"event": "messages.upsert", "sessionId": "1", "data": {

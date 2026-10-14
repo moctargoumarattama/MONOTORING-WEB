@@ -237,20 +237,20 @@ class APITests(unittest.TestCase):
         self.assertEqual(set(runtime.vps), {"second"})
         self.assertNotIn("vps:first", runtime.collector._states)
 
-    def test_restart_requires_admin_and_an_allowlisted_service(self) -> None:
+    def test_restart_is_direct_but_requires_an_allowlisted_service(self) -> None:
         command = self.enable_restart_host()
-        for token in (None, LEGACY_VIEW_TOKEN, VPS_TOKEN):
-            headers = {"x-admin-token": token} if token else {}
-            self.assertEqual(self.client.post("/api/service/klasora/restart", headers=headers).status_code, 401)
         for name in ("cloudflared", "klasora-whatsapp", "ssh", "klasora;id"):
             with self.subTest(name=name):
                 response = self.client.post(f"/api/service/{name}/restart", headers={"x-admin-token": ADMIN_TOKEN})
                 self.assertEqual(response.status_code, 404)
         command.assert_not_awaited()
+        response = self.client.post("/api/service/klasora/restart")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(command.await_count, 1)
 
     def test_restart_uses_fixed_arguments_and_repeated_requests_are_limited(self) -> None:
         command = self.enable_restart_host()
-        headers = {"x-admin-token": ADMIN_TOKEN}
+        headers = {}
         response = self.client.post("/api/service/klasora/restart", headers=headers)
         self.assertEqual(response.status_code, 200)
         command.assert_awaited_once_with([
@@ -258,14 +258,32 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/service/klasora/restart", headers=headers).status_code, 429)
         self.assertEqual(command.await_count, 1)
 
-    def test_disabled_restart_and_missing_admin_token_do_not_run_commands(self) -> None:
+    def test_disabled_restart_remains_closed_and_admin_token_is_unnecessary(self) -> None:
         command = self.enable_restart_host()
-        for settings in (replace(self.settings, enable_restart=False), replace(self.settings, admin_token="")):
-            client, runtime = self.open_client(settings)
-            runtime.collector.systemctl = "/usr/bin/systemctl"
-            response = client.post("/api/service/klasora/restart", headers={"x-admin-token": ADMIN_TOKEN})
-            self.assertEqual(response.status_code, 503)
+        client, runtime = self.open_client(replace(self.settings, enable_restart=False, admin_token=""))
+        runtime.collector.systemctl = "/usr/bin/systemctl"
+        self.assertEqual(client.post("/api/service/klasora/restart").status_code, 503)
         command.assert_not_awaited()
+        client, runtime = self.open_client(replace(self.settings, admin_token=""))
+        runtime.collector.systemctl = "/usr/bin/systemctl"
+        self.assertEqual(client.post("/api/service/klasora/restart").status_code, 200)
+        self.assertEqual(command.await_count, 1)
+
+    def test_browser_metadata_and_origin_prevent_foreign_page_actions(self) -> None:
+        command = self.enable_restart_host()
+        for headers in (
+            {"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"},
+            {"Origin": "https://testserver"}, {"Origin": "http://testserver:8080"},
+            {"Origin": "null"}, {"Origin": "http://user@testserver"},
+            {"Origin": "http://testserver/path"}, {"Origin": "http://testserver?query=1"},
+            {"Sec-Fetch-Site": "same-origin", "Origin": "http://elsewhere"},
+            {"Sec-Fetch-Site": "cross-site", "Origin": "http://testserver"},
+        ):
+            with self.subTest(headers=headers):
+                self.assertEqual(self.client.post("/api/service/klasora/restart", headers=headers).status_code, 403)
+        command.assert_not_awaited()
+        self.assertEqual(self.client.post("/api/service/klasora/restart", headers={
+            "Sec-Fetch-Site": "same-origin", "Origin": "http://testserver"}).status_code, 200)
 
     def test_restart_failure_and_timeout_are_reported_without_leaking_stderr(self) -> None:
         command = self.enable_restart_host()

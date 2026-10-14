@@ -31,7 +31,7 @@ sudo systemctl status noc-dashboard.service --no-pager
 curl --fail --silent --show-error http://127.0.0.1:5050/api/health
 ```
 
-Pour une installation neuve, l'installateur crée le compte système `noc-dashboard`, un venv isolé et `/etc/noc-dashboard.env`. Sur une installation existante, il conserve le compte non-root et son groupe, notamment `moctar`, et adapte les droits et sudoers sans changer le compte de service. Une ancienne unité utilisant root est refusée, sans migration implicite. Il génère deux jetons indépendants pour les actions administrateur et les rapports VPS, avec `secrets.token_hex(32)`, sans les afficher. Le code appartient à `root` ; le service peut le lire mais pas le modifier. La configuration appartient à `root` et au groupe réel du service, mode `0640`.
+Pour une installation neuve, l'installateur crée le compte système `noc-dashboard`, un venv isolé et `/etc/noc-dashboard.env`. Sur une installation existante, il conserve le compte non-root et son groupe, notamment `moctar`, et adapte les droits et sudoers sans changer le compte de service. Une ancienne unité utilisant root est refusée, sans migration implicite. Il génère les secrets des rapports VPS et du webhook WhatsApp avec `secrets.token_hex(32)`, sans les afficher. Le code appartient à `root` ; le service peut le lire mais pas le modifier. La configuration appartient à `root` et au groupe réel du service, mode `0640`.
 
 Une seconde exécution conserve le venv et la configuration existants. Les fichiers remplacés sont sauvegardés dans un dossier privé sous `/var/backups/noc-dashboard`. Le script fonctionne aussi lorsqu'il est lancé directement depuis `/opt/noc-dashboard`, sans recopier les fichiers sur eux-mêmes. Aucun paquet Python global n'est installé. L'installateur vérifie la syntaxe du code, la règle sudoers, l'unité systemd et la réponse réelle de `/api/health`.
 
@@ -42,7 +42,7 @@ $serveur = Read-Host 'Compte et hôte SSH du Dell'
 ssh -N -L 5050:127.0.0.1:5050 $serveur
 ```
 
-Ouvrez **http://127.0.0.1:5050** : le tableau et ses mesures s'affichent directement, sans connexion ni jeton de consultation. Le jeton administrateur se saisit seulement lorsque vous souhaitez autoriser une action de redémarrage.
+Ouvrez **http://127.0.0.1:5050** : le tableau et ses mesures s'affichent directement. Les redémarrages s'exécutent en un clic, sans saisie de jeton ni confirmation. Le bouton est désactivé pendant la demande et le délai de 30 secondes entre deux redémarrages du même service.
 
 ## Configuration
 
@@ -56,9 +56,10 @@ Modifiez la configuration avec `sudoedit /etc/noc-dashboard.env`, puis appliquez
 | `NOC_BACKUP_PATH` | `/mnt/babamarket-backups` ; absence ou volume non monté signalés sans inventer de métriques |
 | `NOC_VPS_STALE_SECONDS` | `20`, délai après lequel un rapport VPS est signalé ancien |
 | `NOC_GATEWAY_SECRET` | Secret de la passerelle WhatsApp communiqué dans le cahier des charges |
-| `NOC_ADMIN_TOKEN` | Jeton distinct pour le header `x-admin-token` des redémarrages |
+| `NOC_ADMIN_TOKEN` | Ancienne valeur conservée si présente ; les actions web ne l'exigent plus |
 | `NOC_VPS_TOKEN` | Jeton distinct pour le header `x-vps-token` des agents distants |
-| `NOC_ENABLE_RESTART` | `true` ; les actions nécessitent aussi Linux et un jeton administrateur |
+| `NOC_ENABLE_RESTART` | `true` ; nécessite Linux, systemd et les règles sudoers installées |
+| `NOC_WHATSAPP_SEND_TIMEOUT` | `10` secondes pour attendre la livraison de la réponse |
 | `NOC_VOICE_ENABLED` | `true`, active le canal vocal configuré |
 | `NOC_WHISPER_MODEL` | `tiny`, modèle multilingue local |
 | `NOC_WHISPER_MODEL_PATH` | `/opt/noc-dashboard/models/whisper`, anciens chemins explicites conservés |
@@ -66,7 +67,7 @@ Modifiez la configuration avec `sudoedit /etc/noc-dashboard.env`, puis appliquez
 
 Le secret WhatsApp est lu depuis l'environnement pour le statut local sur `http://127.0.0.1:3001/session/1/status` et les réponses via `/message/send`. Les messages entrants utilisent le secret privé distinct `NOC_WHATSAPP_WEBHOOK_TOKEN`. Si le secret de la passerelle a changé, reportez sa valeur dans la configuration. Les jetons ne sont inclus ni dans les snapshots, ni dans les événements SSE.
 
-La consultation de `/`, `/api/health`, `/api/snapshot` et `/api/stream` est directe, sans jeton ni cookie. Les anciennes variables `NOC_VIEW_TOKEN` et `NOC_COOKIE_SECURE`, si elles figurent encore dans une configuration existante, sont ignorées ; vous pouvez les laisser en place. Sans `NOC_ADMIN_TOKEN`, les redémarrages sont désactivés. Sans `NOC_VPS_TOKEN`, les rapports VPS sont désactivés.
+La consultation et les actions web sont directes. Les redémarrages restent limités aux quatre applications autorisées et à une demande par service toutes les 30 secondes. Les requêtes provenant d'autres pages sont refusées via Origin et Fetch Metadata. Les anciennes variables `NOC_VIEW_TOKEN`, `NOC_COOKIE_SECURE` et `NOC_ADMIN_TOKEN` peuvent rester en place. Les rapports VPS et les canaux WhatsApp conservent leurs secrets propres.
 
 Ports locaux sondés : Merca-Market `5006`, Klasora `5005`, BabaMarket `5002`, Moc-Mal `5003`. `cloudflared` est surveillé par systemd ; la passerelle utilise `klasora-whatsapp` et le port `3001`. Un service arrêté, une sonde qui expire ou une température absente sont affichés sans bloquer les autres mesures. Si systemd est indisponible, son état est explicitement `unknown`.
 
@@ -267,9 +268,9 @@ sudo -l -U "$NOC_SERVICE_USER"
 sudo systemctl is-active merca-market.service klasora.service babamarket.service moc-mal.service cloudflared.service klasora-whatsapp.service
 ```
 
-Une erreur `401` sur un rapport VPS ou une action de redémarrage exige le jeton correspondant à cette route. Un restart refusé demande la vérification de `NOC_ENABLE_RESTART`, du jeton administrateur et de la règle sudoers. Une température absente indique généralement qu'aucun capteur exploitable n'est exposé à psutil. Le chemin de sauvegarde absent ou non monté est explicitement indisponible, avec des métriques nulles ; aucune capacité de sauvegarde n'est déduite du disque racine.
+Une erreur `401` sur un rapport VPS exige son jeton. Un restart refusé demande la vérification de `NOC_ENABLE_RESTART`, de sudoers et du délai de 30 secondes ; une origine web étrangère est refusée avec `403`. Une température absente indique généralement qu'aucun capteur exploitable n'est exposé à psutil. Le chemin de sauvegarde absent ou non monté est explicitement indisponible, avec des métriques nulles ; aucune capacité de sauvegarde n'est déduite du disque racine.
 
-Le frontend est autonome : CSS, icônes SVG et graphiques sont intégrés au HTML, sans dépendance CDN ni compilation. Les accès réseau aux applications du Dell restent limités à loopback. L'installation initiale reste accessible uniquement localement ou via tunnel ; les jetons administrateur et VPS protègent toujours les écritures.
+Le frontend est autonome : CSS, icônes SVG et graphiques sont intégrés au HTML, sans dépendance CDN ni compilation. Les accès réseau aux applications du Dell restent limités à loopback. L'installation initiale reste accessible uniquement localement ou via tunnel ; les secrets VPS et WhatsApp protègent ces canaux.
 
 Le bouton **Agrandir** du journal ouvre une fenêtre modale avec les 200 derniers événements conservés, leurs messages complets, identifiants, niveaux et dates/heures. Le flux reste en direct ; le défilement automatique peut être mis en pause. Fermez avec **Fermer** ou **Échap**. Cette présentation conserve la hauteur du panneau compact et ne nécessite aucun changement du backend.
 
@@ -277,6 +278,14 @@ Le bouton **Agrandir** du journal ouvre une fenêtre modale avec les 200 dernier
 
 Cette version ajoute les commandes WhatsApp texte/vocales et le radar Sentinel VPS en direct. Suivez [MODULES.md](MODULES.md) pour la mise à jour du Dell, le modèle vocal local, la sauvegarde BabaMarket et l'installation du service `sentinel-vps.service` sur le VPS. La mise à jour de ces modules nécessite le projet complet et ses nouvelles dépendances : l'ancienne procédure limitée à trois fichiers ne suffit pas.
 
-Le correctif vocal ajoute le bridge [Baileys](integrations/baileys-noc.cjs), qui déchiffre les notes via la bibliothèque déjà installée dans la passerelle et envoie leur flux brut sur `/api/voice/process`. Le texte passe par `/api/voice/webhook`. `/api/overview` et `/events` sont les alias du snapshot et du SSE ; `/api/voice/status` fournit un diagnostic du modèle et des permissions. `/api/voice/simulate`, protégé par `X-Admin-Token`, reste toujours une simulation sans redémarrage ni réponse WhatsApp. La [procédure ciblée dans MODULES.md](MODULES.md#1-mettre-à-jour-le-dell) conserve les comptes actuels, notamment `moctar` lorsqu'il est déjà le User du NOC ; `noc-dashboard` reste le défaut pour une nouvelle installation.
+Le correctif vocal ajoute le bridge [Baileys](integrations/baileys-noc.cjs), qui déchiffre les notes via la bibliothèque déjà installée dans la passerelle et envoie leur flux brut sur `/api/voice/process`. Le texte passe par `/api/voice/webhook`. `/api/overview` et `/events` sont les alias du snapshot et du SSE ; `/api/voice/status` fournit un diagnostic du modèle et des permissions. `/api/voice/simulate` fonctionne directement depuis le navigateur et reste toujours une simulation sans redémarrage ni réponse WhatsApp. La [procédure ciblée dans MODULES.md](MODULES.md#1-mettre-à-jour-le-dell) conserve les comptes actuels, notamment `moctar` lorsqu'il est déjà le User du NOC ; `noc-dashboard` reste le défaut pour une nouvelle installation.
 
 Pour le relais `server.js` qui transmet `{sender,message}` et reçoit `403`, utilisez la [réparation sans éditeur](MODULES.md#réparer-le-relais-existant-sans-éditeur) : `sudo python3.11 tools/repair_whatsapp_contract.py --apply --probe`. Le script remplace uniquement le handler communiqué après sauvegarde et validation, synchronise le secret entrant et conserve l'identifiant Baileys. La réponse HTTP reste un accusé ; la réponse WhatsApp est envoyée séparément par le NOC.
+
+Pour ajouter l'alias sortant `/message/send` et les actions web directes sur le Dell, lancez depuis le checkout Git :
+
+```bash
+git pull --ff-only && sudo python3.11 tools/deploy_dashboard_update.py --apply
+```
+
+Le script sauvegarde les fichiers remplacés, ajoute l'alias avant `/session/:ecoleId/send` en conservant cette route, synchronise le secret d'envoi, déploie Python/HTML et redémarre seulement le NOC et la passerelle. Le contrôle de disponibilité n'envoie aucun message WhatsApp. La procédure détaillée figure dans [MODULES.md](MODULES.md#livraison-sortante-et-actions-web-directes).

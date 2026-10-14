@@ -59,6 +59,7 @@ class Settings:
     whatsapp_send_url: str = "http://127.0.0.1:3001/message/send"
     whatsapp_send_to_field: str = "to"
     whatsapp_send_text_field: str = "text"
+    whatsapp_send_timeout: float = 10.0
     whatsapp_media_dir: str = "/var/lib/klasora-whatsapp/media"
     whatsapp_max_audio_bytes: int = 8 * 1024 * 1024
     whatsapp_audio_seconds: int = 60
@@ -96,6 +97,7 @@ class Settings:
             whatsapp_send_url=os.environ.get("NOC_WHATSAPP_SEND_URL", "http://127.0.0.1:3001/message/send"),
             whatsapp_send_to_field=os.environ.get("NOC_WHATSAPP_SEND_TO_FIELD", "to"),
             whatsapp_send_text_field=os.environ.get("NOC_WHATSAPP_SEND_TEXT_FIELD", "text"),
+            whatsapp_send_timeout=_number("NOC_WHATSAPP_SEND_TIMEOUT", 10, 3, 30),
             whatsapp_media_dir=os.environ.get("NOC_WHATSAPP_MEDIA_DIR", "/var/lib/klasora-whatsapp/media"),
             whatsapp_max_audio_bytes=int(_number("NOC_WHATSAPP_MAX_AUDIO_BYTES", 8388608, 1024, 8388608)),
             whatsapp_audio_seconds=int(_number("NOC_WHATSAPP_AUDIO_SECONDS", 60, 1, 60)),

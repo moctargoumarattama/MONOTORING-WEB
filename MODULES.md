@@ -74,7 +74,7 @@ curl --retry 4 --retry-connrefused --retry-delay 1 --fail \
 sudo visudo -cf /etc/sudoers.d/noc-dashboard
 ```
 
-Le dashboard reste accessible sans connexion ni jeton de consultation. Le contrôle WhatsApp utilise le numéro autorisé et le secret du webhook; les jetons des agents et des actions du navigateur restent propres à ces canaux.
+Le dashboard et ses actions web restent accessibles directement, sans saisie de jeton. Le contrôle WhatsApp utilise le numéro autorisé et le secret du webhook ; les agents VPS conservent leur jeton.
 
 ### Compte moctar et permissions du modèle
 
@@ -95,6 +95,22 @@ curl --fail --silent http://127.0.0.1:5050/api/voice/status | python3.11 -m json
 Ces chemins suivent les nouveaux défauts ; utilisez votre chemin configuré s'il diffère. `/api/voice/status` expose `status`, `reason`, `model`, `model_path`, `download_available` et `webhook_configured`. Un modèle absent ou illisible produit un diagnostic sans bloquer la collecte. Si le venv dédié ne contient pas `faster_whisper`, le backend vérifie aussi le Python qui exécute le dashboard. Rechargez l'interface avec **Ctrl+F5** après mise à jour. Aucun déploiement sur le Dell n'a été exécuté depuis cet environnement Windows.
 
 ## 2. Configurer le webhook de la passerelle WhatsApp
+
+### Livraison sortante et actions web directes
+
+Lorsque la passerelle propose uniquement `POST /session/:ecoleId/send`, le nouvel alias `/message/send` réutilise ses sessions existantes. Le NOC envoie exactement `{to,text}` avec `X-Gateway-Secret: NOC_GATEWAY_SECRET`. L'alias utilise la session configurée si elle est connectée, sinon la première session connectée ; il accepte aussi `message` comme texte. Il confirme le succès uniquement après `sock.sendMessage`, conserve la route d'origine et ne crée aucune connexion Baileys supplémentaire.
+
+Depuis le checkout Git du Dell :
+
+```bash
+git pull --ff-only && sudo python3.11 tools/deploy_dashboard_update.py --apply
+```
+
+Le script installe les fichiers du NOC et injecte l'alias dans `/opt/klasora/app/whatsapp-server/server.js`, **avant** l'enregistrement de `/session/:ecoleId/send`. Il conserve les autres routes, les secrets et les comptes systemd. Il sauvegarde les fichiers remplacés, synchronise le secret d'envoi de `/etc/noc-dashboard.env` avec la passerelle, vérifie les sources et l'import sous le compte de la passerelle, puis redémarre uniquement `noc-dashboard.service` et `klasora-whatsapp.service`. La disponibilité de l'alias est vérifiée avec un corps invalide authentifié pour ne pas envoyer de message. Une route ou un Map `sessions` non reconnu est refusé avant modification. Les fichiers écrits par le script sont restaurés si les services ne reviennent pas. Même lorsque `git pull` a déjà remplacé les sources directement sous `/opt`, le script redémarre les services.
+
+Le délai de réponse Python est de dix secondes (`NOC_WHATSAPP_SEND_TIMEOUT=10`), supérieur à la limite de huit secondes de l'alias. Un envoi expiré n'est pas réessayé automatiquement pour éviter un doublon. Envoyez ensuite `statut` depuis le numéro administrateur pour vérifier la livraison réelle.
+
+Les actions de redémarrage web s'exécutent **en un clic**, sans jeton, prompt ou confirmation. Les boutons restent verrouillés pendant la requête et le délai de 30 secondes. `NOC_ENABLE_RESTART=false` désactive toujours les redémarrages ; seules les quatre applications autorisées sont accessibles. Les appels issus d'une autre page sont refusés par Origin et Fetch Metadata. La simulation vocale fonctionne aussi directement et reste sans effet sur les services. Les secrets machine de WhatsApp et des agents VPS restent requis sur leurs canaux. Une ancienne valeur `NOC_ADMIN_TOKEN` peut rester dans l'environnement ; elle ne bloque plus ces actions web.
 
 ### Réparer le relais existant sans éditeur
 
@@ -245,7 +261,7 @@ Message texte :
 La réponse est envoyée au numéro autorisé par `POST http://127.0.0.1:3001/message/send`, avec `X-Gateway-Secret: NOC_GATEWAY_SECRET` et ce corps :
 
 ```json
-{"sessionId":"1","to":"212770010264@s.whatsapp.net","text":"État de l'infrastructure…"}
+{"to":"212770010264","text":"État de l'infrastructure…"}
 ```
 
 Les messages sortants `fromMe:true` sont ignorés. Les autres numéros, groupes et sessions sont refusés. Un header de webhook invalide répond `403`; un canal non configuré répond `503`. Les identifiants de message servent à éviter les doublons; une file limitée et un worker unique empêchent les traitements audio simultanés.
@@ -263,21 +279,18 @@ Pour des fichiers locaux, renseignez `NOC_WHATSAPP_MEDIA_DIR` avec le dossier ex
 | `GET /api/voice/status` | Diagnostic et disponibilité du modèle / canal vocal |
 | `POST /api/voice/webhook` | JSON normalisé, alias de `/api/whatsapp/webhook` |
 | `POST /api/voice/process` | Audio brut déchiffré, ou JSON normalisé compatible |
-| `POST /api/voice/simulate` | Analyse avec `X-Admin-Token`, toujours en simulation |
+| `POST /api/voice/simulate` | Analyse directe depuis le navigateur, toujours en simulation |
 
 Le POST audio accepte `audio/ogg`, `audio/opus`, `audio/mpeg`, `audio/wav` et `application/octet-stream`. Ses headers obligatoires sont `X-Gateway-Secret` (valeur de **NOC_WHATSAPP_WEBHOOK_TOKEN**, différente de `NOC_GATEWAY_SECRET`), `X-WhatsApp-From`, `X-Message-Id` et `X-Session-Id`. Le bridge envoie l'audio sur `/api/voice/process` et le texte sur `/api/voice/webhook`. Un upload accepté produit `202`, puis le résultat arrive dans le SSE ; le webhook JSON normalisé garde sa réponse `200`.
 
-La simulation ci-dessous ne redémarre **jamais** de service et n'envoie aucune réponse WhatsApp, même pour `restart babamarket`. Les commandes utilisent le jeton réel sans l'afficher ni le placer dans les arguments de curl :
+La simulation ci-dessous ne redémarre **jamais** de service et n'envoie aucune réponse WhatsApp, même pour `restart babamarket`. Elle ne demande aucun jeton :
 
 ```bash
 curl --fail --silent http://127.0.0.1:5050/api/overview | python3.11 -m json.tool
 curl --silent --no-buffer --max-time 7 http://127.0.0.1:5050/events || test "$?" -eq 28
 curl --fail --silent http://127.0.0.1:5050/api/voice/status | python3.11 -m json.tool
-NOC_ADMIN_TOKEN="$(sudo sed -n 's/^NOC_ADMIN_TOKEN=//p' /etc/noc-dashboard.env)"
-printf 'header = "X-Admin-Token: %s"\n' "$NOC_ADMIN_TOKEN" |
-  curl --config - --fail --silent --show-error --header 'Content-Type: application/json' \
+curl --fail --silent --show-error --header 'Content-Type: application/json' \
     --data '{"text":"restart babamarket"}' http://127.0.0.1:5050/api/voice/simulate
-unset NOC_ADMIN_TOKEN
 ```
 
 Pour un test réel de transcription, enregistrez seulement **« statut »** dans un fichier OGG. Ce test traite la note puis répond sur WhatsApp. Fournissez un fichier existant avec `--data-binary`, sans JSON, base64 ni multipart :

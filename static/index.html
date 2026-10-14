@@ -287,7 +287,6 @@
     </main>
   </div>
   <template id="service-template"><article class="card service-card"><div class="service-header"><div class="service-logo"></div><div class="service-identity"><h3 class="service-name"></h3><p class="service-port"></p></div><span class="badge service-badge"><span class="led"></span><span class="service-badge-text">EN ATTENTE</span></span></div><div class="service-measure"><div><div class="service-measure-label">Réponse HTTP</div><div class="latency"><span class="service-latency">—</span><small>ms</small></div></div><span class="http-status">HTTP —</span></div><div class="service-footer"><span class="service-systemd">systemd : —</span><button class="restart-button" type="button" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>Restart</button></div><p class="service-error" hidden></p></article></template>
-  <dialog id="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description"><form id="restart-form"><div class="dialog-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg></div><div class="eyebrow" style="margin-bottom:8px">ACTION ADMINISTRATEUR</div><h2 id="restart-title">Redémarrer le service</h2><p id="restart-description"></p><label class="dialog-label" for="admin-token">Jeton administrateur</label><input type="password" id="admin-token" name="admin_token" autocomplete="off" required spellcheck="false"><div class="dialog-error" id="restart-error" role="alert" hidden></div><div class="dialog-actions"><button class="button" id="restart-cancel" type="button">Annuler</button><button class="button danger" id="restart-submit" type="submit">Confirmer le redémarrage</button></div></form></dialog>
   <dialog id="events-dialog" aria-labelledby="events-dialog-title" aria-describedby="events-dialog-description">
     <div class="events-dialog-header"><div class="events-dialog-heading"><div class="eyebrow">SUPERVISION · FLUX SSE</div><h2 id="events-dialog-title">Journal d’événements</h2><p id="events-dialog-description">Messages complets et horodatages détaillés, actualisés en direct.</p></div><button class="button" id="events-close" type="button" autofocus>Fermer</button></div>
     <div class="events-dialog-toolbar"><span id="events-dialog-count">0 ÉVÉNEMENT</span><button class="console-button" id="events-dialog-autoscroll" type="button" aria-pressed="true">Défilement auto</button></div>
@@ -297,7 +296,7 @@
   <dialog id="voice-dialog" aria-labelledby="voice-title">
     <div class="eyebrow" style="margin-bottom:8px">WHATSAPP · VOICE-TO-ACTION</div><h2 id="voice-title">Module vocal</h2><div class="voice-detail-meta" id="voice-module-meta">En attente du collecteur</div><div class="voice-detail-meta" id="voice-detail-meta">Aucune commande reçue pour le moment.</div>
     <div id="voice-command-details" hidden><div class="voice-detail-label">Transcription / message</div><div class="voice-detail-text" id="voice-transcription"></div><div class="voice-detail-label">Réponse</div><div class="voice-detail-text" id="voice-response"></div></div>
-    <details class="voice-simulation"><summary>Simuler une commande</summary><p class="voice-simulation-note">Simulation uniquement : aucune action sur les services et aucun envoi WhatsApp.</p><form id="voice-simulate-form"><label class="dialog-label" for="voice-simulate-command">Commande à tester</label><select id="voice-simulate-command" name="text"><option value="statut">statut</option><option value="restart babamarket">restart babamarket</option></select><label class="dialog-label" for="voice-simulate-token">Jeton administrateur</label><input id="voice-simulate-token" type="password" name="admin_token" autocomplete="off" spellcheck="false" required><div class="voice-simulation-feedback" id="voice-simulate-feedback" role="status" hidden></div><div class="dialog-actions"><button class="button primary" id="voice-simulate-submit" type="submit">Lancer la simulation</button></div></form></details>
+    <details class="voice-simulation"><summary>Simuler une commande</summary><p class="voice-simulation-note">Simulation uniquement : aucune action sur les services et aucun envoi WhatsApp.</p><form id="voice-simulate-form"><label class="dialog-label" for="voice-simulate-command">Commande à tester</label><select id="voice-simulate-command" name="text"><option value="statut">statut</option><option value="restart babamarket">restart babamarket</option></select><div class="voice-simulation-feedback" id="voice-simulate-feedback" role="status" hidden></div><div class="dialog-actions"><button class="button primary" id="voice-simulate-submit" type="submit">Lancer la simulation</button></div></form></details>
     <div class="dialog-actions"><button class="button" id="voice-close" type="button">Fermer</button></div>
   </dialog>
   <div class="toast" id="toast" role="status" hidden></div>
@@ -334,7 +333,7 @@
         {name:'babamarket', label:'BabaMarket', port:5002, monogram:'BM'},
         {name:'moc-mal', label:'Moc-Mal', port:5003, monogram:'MC'}
       ];
-      const state = {snapshot:null, stream:null, lastReceipt:0, lastTimestamp:null, history:[], seenEvents:new Set(), autoScroll:true, eventDialogAutoScroll:true, stale:true, probePending:false, lastProbe:0, restartService:null, toastTimer:null, voiceCommand:null, sentinelSignature:null, remoteTab:'sentinel', simulating:false};
+      const state = {snapshot:null, stream:null, lastReceipt:0, lastTimestamp:null, history:[], seenEvents:new Set(), autoScroll:true, eventDialogAutoScroll:true, stale:true, probePending:false, lastProbe:0, restartPending:new Set(), restartCooldown:new Map(), toastTimer:null, voiceCommand:null, sentinelSignature:null, remoteTab:'sentinel', simulating:false};
       const serviceNodes = new Map();
       serviceDefinitions.forEach(definition => {
         const card = $('service-template').content.firstElementChild.cloneNode(true);
@@ -455,8 +454,12 @@
           card.querySelector('.service-latency').textContent = numeric(service?.latency_ms, 1);
           card.querySelector('.http-status').textContent = 'HTTP ' + (service?.http_status ?? '—');
           card.querySelector('.service-systemd').textContent = 'systemd : ' + (service?.systemd || '—');
-          const button = card.querySelector('.restart-button'); button.disabled = !restartEnabled || state.stale;
-          button.title = restartEnabled ? 'Redémarrer ' + definition.label : 'Redémarrage désactivé dans la configuration';
+          const button = card.querySelector('.restart-button');
+          const pending = state.restartPending.has(definition.name);
+          const remaining = Math.max(0, Math.ceil(((state.restartCooldown.get(definition.name) || 0) - Date.now()) / 1000));
+          button.disabled = !restartEnabled || state.stale || pending || remaining > 0;
+          button.title = !restartEnabled ? 'Redémarrage désactivé dans la configuration' : state.stale ? 'En attente du flux de supervision' : pending ? 'Redémarrage en cours' : remaining > 0 ? 'Prochain redémarrage possible dans ' + remaining + ' s' : 'Redémarrer ' + definition.label;
+          button.setAttribute('aria-busy', String(pending));
           button.setAttribute('aria-label', 'Redémarrer ' + definition.label);
           const error = card.querySelector('.service-error'); error.textContent = service?.error || ''; error.hidden = !service?.error;
           card.title = service?.checked_at ? 'Dernière vérification : ' + time(service.checked_at) : '';
@@ -736,11 +739,24 @@
         }
         finally { state.probePending = false; }
       }
-      function openRestart(name, label) {
-        if (!state.snapshot?.actions?.restart_enabled || state.stale) return;
-        state.restartService = name; $('admin-token').value = ''; $('restart-error').hidden = true;
-        set('restart-description', 'Le service « ' + label + ' » sera redémarré. Une courte interruption de son application est possible.');
-        $('restart-dialog').showModal(); $('admin-token').focus();
+      async function openRestart(name, label) {
+        if (!state.snapshot?.actions?.restart_enabled || state.stale || !serviceNodes.has(name) || state.restartPending.has(name) || (state.restartCooldown.get(name) || 0) > Date.now()) return;
+        const startedAt = Date.now();
+        state.restartPending.add(name);
+        renderServices(state.snapshot.services, state.snapshot.actions.restart_enabled === true);
+        try {
+          const response = await apiFetch('/api/service/' + encodeURIComponent(name) + '/restart', {method:'POST'}, 20000);
+          const body = await readResponse(response);
+          if (response.status === 429) state.restartCooldown.set(name, Date.now() + 30000);
+          if (!response.ok || body.ok !== true) throw new Error(typeof body.detail === 'string' ? body.detail : typeof body.message === 'string' ? body.message : 'Redémarrage refusé (HTTP ' + response.status + ').');
+          state.restartCooldown.set(name, startedAt + 30000);
+          toast(body.message || 'Redémarrage demandé pour ' + label + '.', 'success');
+        } catch (error) {
+          toast(error.name === 'AbortError' ? 'Délai dépassé. Vérifiez le prochain relevé avant de réessayer.' : error.message || 'Le redémarrage a échoué.', 'error');
+        } finally {
+          state.restartPending.delete(name);
+          renderServices(state.snapshot?.services, state.snapshot?.actions?.restart_enabled === true);
+        }
       }
       ['vps', 'sentinel'].forEach(tab => {
         $(tab + '-tab').addEventListener('click', () => selectRemoteTab(tab));
@@ -756,18 +772,14 @@
       $('voice-trigger').disabled = false;
       $('voice-trigger').addEventListener('click', () => { updateVoiceDetails(); $('voice-dialog').showModal(); });
       $('voice-close').addEventListener('click', () => $('voice-dialog').close());
-      $('voice-dialog').addEventListener('close', () => { $('voice-simulate-token').value = ''; });
       $('voice-simulate-form').addEventListener('submit', async event => {
         event.preventDefault();
         if (state.simulating) return;
-        let token = $('voice-simulate-token').value;
-        if (!token) { $('voice-simulate-token').focus(); return; }
         const text = $('voice-simulate-command').value;
-        $('voice-simulate-token').value = ''; state.simulating = true;
+        state.simulating = true;
         $('voice-simulate-submit').disabled = true; $('voice-simulate-command').disabled = true; $('voice-simulate-feedback').hidden = true;
         try {
-          const response = await apiFetch('/api/voice/simulate', {method:'POST', headers:{'Content-Type':'application/json', 'X-Admin-Token':token}, body:JSON.stringify({text})}, 10000);
-          token = '';
+          const response = await apiFetch('/api/voice/simulate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})}, 10000);
           const body = await readResponse(response);
           if (response.status !== 202) throw new Error(typeof body.detail === 'string' ? body.detail : typeof body.message === 'string' ? body.message : 'Simulation refusée (HTTP ' + response.status + ').');
           set('voice-simulate-feedback', typeof body.message === 'string' ? body.message : 'Simulation acceptée. Le résultat sera affiché dans le flux, sans action sur les services.');
@@ -776,23 +788,7 @@
         } catch (error) {
           set('voice-simulate-feedback', error.name === 'AbortError' ? 'Délai dépassé. Consultez le dernier résultat avant de réessayer.' : error.message || 'La simulation a échoué.');
           $('voice-simulate-feedback').dataset.tone = 'error'; $('voice-simulate-feedback').hidden = false;
-        } finally { token = ''; state.simulating = false; $('voice-simulate-submit').disabled = false; $('voice-simulate-command').disabled = false; }
-      });
-      $('restart-cancel').addEventListener('click', () => $('restart-dialog').close());
-      $('restart-dialog').addEventListener('close', () => { $('admin-token').value = ''; state.restartService = null; });
-      $('restart-form').addEventListener('submit', async event => {
-        event.preventDefault();
-        const service = state.restartService;
-        if (!service || !state.snapshot?.actions?.restart_enabled || state.stale) return;
-        let token = $('admin-token').value; $('admin-token').value = '';
-        $('restart-submit').disabled = true; $('restart-cancel').disabled = true; $('restart-error').hidden = true;
-        try {
-          const response = await apiFetch('/api/service/' + encodeURIComponent(service) + '/restart', {method:'POST', headers:{'x-admin-token':token}}, 20000);
-          const body = await readResponse(response);
-          if (!response.ok || body.ok !== true) throw new Error(typeof body.detail === 'string' ? body.detail : typeof body.message === 'string' ? body.message : 'Redémarrage refusé (HTTP ' + response.status + ').');
-          $('restart-dialog').close(); toast(body.message || 'Redémarrage demandé pour ' + service + '.', 'success');
-        } catch (error) { displayError('restart-error', error.name === 'AbortError' ? 'Délai dépassé. Vérifiez le prochain relevé avant de réessayer.' : error.message); }
-        finally { token = ''; $('restart-submit').disabled = false; $('restart-cancel').disabled = false; }
+        } finally { state.simulating = false; $('voice-simulate-submit').disabled = false; $('voice-simulate-command').disabled = false; }
       });
       $('refresh-button').addEventListener('click', async () => {
         $('refresh-button').disabled = true;

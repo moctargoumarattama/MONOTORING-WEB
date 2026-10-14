@@ -255,7 +255,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json={"ok": True})
         self.controller.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         self.assertTrue(await self.controller._send_reply("✅ état opérationnel"))
-        self.assertEqual(received, {"sessionId": "1", "to": ADMIN + "@s.whatsapp.net",
+        self.assertEqual(received, {"to": ADMIN,
                                     "text": "✅ état opérationnel"})
 
     async def test_media_paths_and_size_are_confined(self) -> None:

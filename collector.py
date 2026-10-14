@@ -268,6 +268,6 @@ class Collector:
             "timestamp": utc_now(), "hostname": self.hostname, "platform": platform.system(), "uptime_seconds": uptime,
             "global_status": "operational" if healthy else "incident", "hardware": hardware, "services": services,
             "infrastructure": {"cloudflared": cloudflare, "whatsapp": whatsapp}, "vps": [], "events": list(self.events),
-            "actions": {"restart_enabled": bool(self.settings.enable_restart and self.settings.admin_token and self.systemctl and shutil.which("sudo"))},
+            "actions": {"restart_enabled": bool(self.settings.enable_restart and self.systemctl and shutil.which("sudo"))},
             "collector": {"last_success": utc_now() if not hardware_error else None, "error": "Métriques matérielles indisponibles" if hardware_error else None},
         }

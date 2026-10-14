@@ -516,14 +516,14 @@ class WhatsAppController:
         if self.client is None:
             return False
         payload = {
-            "sessionId": self.settings.whatsapp_session_id,
-            self.settings.whatsapp_send_to_field: normalize_phone(self.settings.admin_phone_number) + "@s.whatsapp.net",
+            self.settings.whatsapp_send_to_field: normalize_phone(self.settings.admin_phone_number),
             self.settings.whatsapp_send_text_field: response[:1000],
         }
         try:
-            async with asyncio.timeout(3):
+            async with asyncio.timeout(self.settings.whatsapp_send_timeout):
                 async with self.client.stream("POST", self.settings.whatsapp_send_url, json=payload,
-                                              headers={"x-gateway-secret": self.settings.gateway_secret}) as reply:
+                                              headers={"x-gateway-secret": self.settings.gateway_secret},
+                                              timeout=self.settings.whatsapp_send_timeout) as reply:
                     return reply.is_success
         except (httpx.HTTPError, TimeoutError):
             return False

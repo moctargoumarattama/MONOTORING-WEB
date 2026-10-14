@@ -100,13 +100,24 @@ def token_matches(received: str | None, expected: str) -> bool:
 
 
 def same_origin(request: Request) -> None:
+    # Les actions web sont directes ; une page tierce ne peut pas les déclencher.
+    site = request.headers.get("sec-fetch-site")
+    if site and site.lower() not in {"same-origin", "none"}:
+        raise HTTPException(403, "Origine non autorisée")
     origin = request.headers.get("origin")
     if origin:
         try:
             parts = urlsplit(origin)
+            target = urlsplit(str(request.url))
+            valid = (parts.scheme in {"http", "https"} and parts.scheme == target.scheme
+                     and parts.hostname == target.hostname
+                     and (parts.port or (443 if parts.scheme == "https" else 80))
+                     == (target.port or (443 if target.scheme == "https" else 80))
+                     and not parts.username and not parts.password and parts.path in {"", "/"}
+                     and not parts.query and not parts.fragment)
         except ValueError:
             raise HTTPException(403, "Origine non autorisée") from None
-        if parts.scheme not in {"http", "https"} or parts.netloc.lower() != request.url.netloc.lower():
+        if not valid:
             raise HTTPException(403, "Origine non autorisée")
 
 
@@ -327,10 +338,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         same_origin(request)
         if name not in RESTART_ALLOWLIST:
             raise HTTPException(404, "Service non autorisé")
-        if not settings.admin_token:
-            raise HTTPException(503, "Redémarrages désactivés : jeton non configuré")
-        if not token_matches(request.headers.get("x-admin-token"), settings.admin_token):
-            raise HTTPException(401, "Jeton administrateur incorrect")
         runtime: Runtime = application.state.runtime
         return await runtime.restart_service(name)
 
@@ -348,10 +355,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post("/api/voice/simulate", status_code=202)
     async def voice_simulate(request: Request):
         same_origin(request)
-        if not settings.admin_token:
-            raise HTTPException(503, "Simulation non configurée : NOC_ADMIN_TOKEN requis")
-        if not token_matches(request.headers.get("x-admin-token"), settings.admin_token):
-            raise HTTPException(401, "Jeton administrateur incorrect")
         payload = await limited_json(request, 4096)
         if not isinstance(payload, dict) or set(payload) != {"text"}:
             raise HTTPException(422, "Objet JSON attendu : {text: commande}")
